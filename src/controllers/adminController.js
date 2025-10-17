@@ -729,3 +729,41 @@ export async function updateQuestion(req, res) {
     return res.status(500).json({ message: "Internal server error", error: err.message });
   }
 }
+
+export async function deleteQuestionsByExam(req, res) {
+  try {
+    const { exam_id } = req.params;
+    if (!exam_id) return res.status(400).json({ message: "Exam ID required" });
+
+    const { error } = await supabase
+      .from("questions")
+      .delete()
+      .eq("exam_id", exam_id);
+
+    if (error) return res.status(500).json({ message: "Failed to delete questions", error });
+    return res.status(200).json({ success: true, message: "All questions deleted successfully" });
+  } catch (err) {
+    console.error("Error deleting questions:", err);
+    return res.status(500).json({ message: "Internal server error", error: err.message });
+  }
+}
+
+// Get distinct exam IDs that have questions (optimized for minimal data transfer)
+export async function getExamsWithQuestions(req, res) {
+  try {
+    // Fetch only distinct exam_id values instead of all questions
+    const { data, error } = await supabase
+      .from("questions")
+      .select("exam_id");
+
+    if (error) return res.status(500).json({ message: "Failed to fetch exam IDs", error });
+    
+    // Extract unique exam IDs
+    const uniqueExamIds = [...new Set(data.map(q => q.exam_id))];
+    
+    return res.status(200).json(uniqueExamIds);
+  } catch (err) {
+    console.error("Error fetching exams with questions:", err);
+    return res.status(500).json({ message: "Internal server error", error: err.message });
+  }
+}

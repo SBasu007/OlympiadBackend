@@ -3,7 +3,7 @@ import multer from "multer";
 import { authRequired } from "../middleware/adminAuth.js";
 import { createCategory,createSubCategory,createSubject,createExam,
         getCategory, getSubCategory,getSubject,getExam,
-        uploadQuestions, getQuestions, updateQuestion,
+        uploadQuestions, getQuestions, updateQuestion, deleteQuestionsByExam, getExamsWithQuestions,
         updateSubCategory, deleteSubCategory,
         updateSubject, deleteSubject,
         updateExam, deleteExam
@@ -42,9 +42,12 @@ router.delete("/exam/:id", deleteExam);
 
 //Question Upload
 router.post("/upload-questions", upload.single("file"), uploadQuestions);
-//Questions list/update
+//Questions list/update/delete
 router.get("/questions", getQuestions);
 router.get("/questions/:id", getQuestions);
 router.put("/questions/:id", upload.single("file"), updateQuestion);
+router.delete("/questions/exam/:exam_id", deleteQuestionsByExam);
+// Get exams with questions (optimized)
+router.get("/exams-with-questions", getExamsWithQuestions);
 
 export default router;
