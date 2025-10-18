@@ -4,7 +4,7 @@ import helmet from "helmet";
 import adminRoute from "./routes/adminRoute.js";
 import authRoute from "./routes/adminAuthRoute.js";
 import healthRoute from "./routes/healthRoute.js";
-import job from "./config/cron.js";
+import {job,dbjob} from "./config/cron.js";
 // import rateLimiter from "./middleware/rateLimiter.js";
 // import job from "./config/cron.js";
 
@@ -12,7 +12,10 @@ import job from "./config/cron.js";
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ENABLE_CRON = process.env.ENABLE_CRON === "true";
-if (process.env.NODE_ENV === "production" || ENABLE_CRON) job.start();
+if (process.env.NODE_ENV === "production" || ENABLE_CRON) {
+  job.start();
+  dbjob.start(); // 👈 Start the second cron job
+}
 
 //middleware
 app.use(helmet());

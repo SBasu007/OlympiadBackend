@@ -34,9 +34,16 @@ const job = new cron.CronJob("*/14 * * * *", function () {
   }
   // Ping server health to keep the host awake
   pingUrl(`${API_URL}${HEALTH_PATH}`);
+});
+
+const dbjob = new cron.CronJob("0 7 * * *", function () {
+  if (!API_URL) {
+    console.warn("[cron] API_URL not set; skipping pings");
+    return;
+  }
   // Ping warmup to issue a tiny Supabase read to keep DB connection hot
   pingUrl(`${API_URL}${WARMUP_PATH}`);
 });
 
-export default job;
+export { job, dbjob };
 
