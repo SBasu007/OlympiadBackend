@@ -36,7 +36,7 @@ const job = new cron.CronJob("*/14 * * * *", function () {
   pingUrl(`${API_URL}${HEALTH_PATH}`);
 });
 
-const dbjob = new cron.CronJob("0 7 * * *", function () {
+const dbjob = new cron.CronJob("0 */6 * * *", function () {
   if (!API_URL) {
     console.warn("[cron] API_URL not set; skipping pings");
     return;
