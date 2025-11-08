@@ -643,6 +643,147 @@ export async function uploadQuestions(req, res) {
   }
 }
 
+// Batch Question Upload Controller
+export async function uploadQuestionsBatch(req, res) {
+  const uploadedImages = []; // Track uploaded images for rollback
+
+  try {
+    const { exam_id, questions: questionsJSON } = req.body;
+
+    if (!exam_id) {
+      return res.status(400).json({ message: "exam_id is required" });
+    }
+
+    if (!questionsJSON) {
+      return res.status(400).json({ message: "questions data is required" });
+    }
+
+    let questionsData;
+    try {
+      questionsData = JSON.parse(questionsJSON);
+    } catch (e) {
+      return res.status(400).json({ message: "Invalid questions JSON format" });
+    }
+
+    if (!Array.isArray(questionsData) || questionsData.length === 0) {
+      return res.status(400).json({ message: "questions must be a non-empty array" });
+    }
+
+    // Prepare array for batch insert
+    const questionsToInsert = [];
+
+    // Process each question
+    for (let i = 0; i < questionsData.length; i++) {
+      const q = questionsData[i];
+      let image_url = null;
+
+      // Check if this question has a file
+      if (q.hasFile && q.fileIndex !== null) {
+        const fileFieldName = `file_${q.fileIndex}`;
+        const file = req.files?.[fileFieldName]?.[0]; // multer stores files in req.files
+
+        if (file) {
+          try {
+            const uploadResult = await uploadToCloudinary(file, "questions");
+            image_url = uploadResult.secure_url;
+            uploadedImages.push({
+              public_id: uploadResult.public_id,
+              questionIndex: i
+            });
+          } catch (uploadErr) {
+            console.error(`Failed to upload image for question ${i}:`, uploadErr);
+            // Continue without image, or you can choose to fail the whole batch
+            // For now, we'll continue without the image
+          }
+        }
+      }
+
+      // Parse options
+      let parsedOptions = [];
+      if (Array.isArray(q.options)) {
+        parsedOptions = q.options;
+      } else if (typeof q.options === 'string') {
+        try {
+          parsedOptions = JSON.parse(q.options);
+        } catch (e) {
+          parsedOptions = [];
+        }
+      }
+
+      // Determine correct value
+      let correctValue = q.correct_option;
+      if (typeof q.correct_option === 'string') {
+        const idx = Number.parseInt(q.correct_option, 10);
+        if (!Number.isNaN(idx) && idx >= 0 && idx < parsedOptions.length) {
+          correctValue = parsedOptions[idx];
+        }
+      } else if (typeof q.correct_option === 'number') {
+        if (q.correct_option >= 0 && q.correct_option < parsedOptions.length) {
+          correctValue = parsedOptions[q.correct_option];
+        }
+      }
+
+      questionsToInsert.push({
+        exam_id,
+        question: q.question_text,
+        options: parsedOptions,
+        correct: correctValue,
+        image_url
+      });
+    }
+
+    // Batch insert into Supabase
+    const { data, error } = await supabase
+      .from("questions")
+      .insert(questionsToInsert)
+      .select("*");
+
+    if (error) {
+      // Rollback all uploaded images
+      console.error("Supabase batch insert failed:", error);
+      
+      for (const img of uploadedImages) {
+        try {
+          await deleteFromCloudinary(img.public_id);
+          console.log(`Rolled back image for question ${img.questionIndex}`);
+        } catch (delErr) {
+          console.warn(`Failed to rollback image ${img.public_id}:`, delErr.message);
+        }
+      }
+
+      return res.status(500).json({
+        message: "Failed to upload questions batch",
+        error: error.message,
+      });
+    }
+
+    // Success
+    return res.status(201).json({
+      message: "Questions uploaded successfully",
+      uploaded: data.length,
+      questions: data
+    });
+
+  } catch (err) {
+    console.error("Error in batch upload:", err);
+
+    // Rollback uploaded images on exception
+    for (const img of uploadedImages) {
+      try {
+        await deleteFromCloudinary(img.public_id);
+        console.log(`Rolled back image for question ${img.questionIndex}`);
+      } catch (delErr) {
+        console.warn(`Failed to rollback image ${img.public_id}:`, delErr.message);
+      }
+    }
+
+    return res.status(500).json({
+      message: "Internal server error during batch upload",
+      error: err.message,
+    });
+  }
+}
+
 // Questions CRUD for Exam Papers
 export async function getQuestions(req, res) {
   try {

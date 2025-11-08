@@ -3,7 +3,7 @@ import multer from "multer";
 import { authRequired } from "../middleware/adminAuth.js";
 import { createCategory,createSubCategory,createSubject,createExam,
         getCategory, getSubCategory,getSubject,getExam,
-        uploadQuestions, getQuestions, updateQuestion, deleteQuestionsByExam, getExamsWithQuestions,
+        uploadQuestions, uploadQuestionsBatch, getQuestions, updateQuestion, deleteQuestionsByExam, getExamsWithQuestions,
         updateSubCategory, deleteSubCategory,
         updateSubject, deleteSubject,
         updateExam, deleteExam
@@ -42,6 +42,12 @@ router.delete("/exam/:id", deleteExam);
 
 //Question Upload
 router.post("/upload-questions", upload.single("file"), uploadQuestions);
+//Batch Question Upload (NEW - sends all questions in one request)
+router.post("/upload-questions-batch", upload.fields([
+  // We'll dynamically accept file_0, file_1, file_2, etc.
+  // Multer's fields with maxCount allows multiple files with different names
+  ...Array.from({ length: 100 }, (_, i) => ({ name: `file_${i}`, maxCount: 1 }))
+]), uploadQuestionsBatch);
 //Questions list/update/delete
 router.get("/questions", getQuestions);
 router.get("/questions/:id", getQuestions);
