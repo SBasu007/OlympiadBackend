@@ -1,5 +1,6 @@
 import { supabase } from "../config/db.js";
 import { uploadToCloudinary,deleteFromCloudinary } from "../config/uploadCloudinary.js";
+import { sanitizeOutput } from "../utils/sanitize.js";
 
 // Exam Enrollment
 export async function enrollInExam(req, res) {
@@ -49,7 +50,7 @@ export async function enrollInExam(req, res) {
     }
 
     // ✅ Only reach here if insert succeeded
-    return res.status(201).json(data[0]);
+    return res.status(201).json(sanitizeOutput(data[0]));
 
   } catch (err) {
     console.error("Error enrolling in exam:", err);
@@ -83,10 +84,10 @@ export async function checkEnrollment(req, res) {
 
     // Return enrollment status with status field
     if (data !== null) {
-      return res.status(200).json({ 
+      return res.status(200).json(sanitizeOutput({ 
         enrolled: true, 
         status: data.status || 'pending' 
-      });
+      }));
     } else {
       return res.status(200).json({ enrolled: false });
     }
@@ -140,7 +141,7 @@ export async function getEnrolledExams(req, res) {
         enrollment_status: enrollment.status || 'pending'
       }));
     
-    return res.status(200).json(enrolledExams);
+    return res.status(200).json(sanitizeOutput(enrolledExams));
 
   } catch (err) {
     console.error("Error fetching enrolled exams:", err);

@@ -1,13 +1,26 @@
 import { supabase } from "../config/db.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { sanitizeOutput } from "../utils/sanitize.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_change_me";
 const JWT_EXPIRES_IN = "1d"; // 1 day session
+const COOKIE_MAX_AGE = 24 * 60 * 60 * 1000; // 1 day in milliseconds
 
 // Helper to generate JWT
 function signToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+}
+
+// Helper to set HTTP-only cookie
+function setAuthCookie(res, token) {
+  res.cookie('student_token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+    sameSite: 'strict',
+    maxAge: COOKIE_MAX_AGE,
+    path: '/',
+  });
 }
 
 // POST /api/auth/student/register
@@ -71,10 +84,14 @@ export async function registerUser(req, res) {
       return res.status(500).json({ message: "Failed to create account" });
     }
 
-    // Generate JWT
+    // Generate JWT and set HTTP-only cookie
     const token = signToken({ sub: data.user_id, email: data.email, type: "user" });
+    setAuthCookie(res, token);
 
-    return res.status(201).json({ user: data, token });
+    // Sanitize user data before sending
+    const sanitizedUser = sanitizeOutput(data);
+
+    return res.status(201).json({ user: sanitizedUser, message: "Registration successful" });
   } catch (err) {
     console.error("Register error:", err);
     return res.status(500).json({ message: "Internal server error" });
@@ -110,11 +127,15 @@ export async function loginStudent(req, res) {
     }
 
     const token = signToken({ sub: student.user_id, email: student.email, type: 'student' });
+    setAuthCookie(res, token);
     
     // Remove password before returning
     delete student.password;
 
-    return res.status(200).json({ user: student, token });
+    // Sanitize user data before sending
+    const sanitizedStudent = sanitizeOutput(student);
+
+    return res.status(200).json({ user: sanitizedStudent, message: "Login successful" });
   } catch (err) {
     console.error("Login error:", err);
     return res.status(500).json({ message: "Internal server error" });
@@ -140,9 +161,30 @@ export async function getStudentProfile(req, res) {
       return res.status(500).json({ message: "Database error" });
     }
 
-    return res.status(200).json({ user: student });
+    // Sanitize user data before sending
+    const sanitizedStudent = sanitizeOutput(student);
+
+    return res.status(200).json({ user: sanitizedStudent });
   } catch (err) {
     console.error("Profile error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+// POST /api/auth/student/logout
+export async function logoutStudent(req, res) {
+  try {
+    // Clear the HTTP-only cookie
+    res.clearCookie('student_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+    });
+
+    return res.status(200).json({ message: "Logged out successfully" });
+  } catch (err) {
+    console.error("Logout error:", err);
     return res.status(500).json({ message: "Internal server error" });
   }
 }``
