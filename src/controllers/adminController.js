@@ -908,3 +908,83 @@ export async function getExamsWithQuestions(req, res) {
     return res.status(500).json({ message: "Internal server error", error: err.message });
   }
 }
+
+// Get pending exam enrollments
+export async function getPendingEnrollments(req, res) {
+  try {
+    const { data, error } = await supabase
+      .from("enrol_exam")
+      .select(`
+        enrol_id,
+        payment_url,
+        created_at,
+        status,
+        users:user_id (
+          name,
+          contact
+        ),
+        exam:exam_id (
+          name
+        )
+      `)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching pending enrollments:", error);
+      return res.status(500).json({ message: "Failed to fetch pending enrollments", error: error.message });
+    }
+
+    // Format the response
+    const formattedData = data.map(enrollment => ({
+      enrol_id: enrollment.enrol_id,
+      name: enrollment.users?.name || "N/A",
+      payment_url: enrollment.payment_url,
+      contact: enrollment.users?.contact || "N/A",
+      exam_name: enrollment.exam?.name || "N/A",
+      created_at: enrollment.created_at,
+      status: enrollment.status
+    }));
+
+    return res.status(200).json(formattedData);
+  } catch (err) {
+    console.error("Error fetching pending enrollments:", err);
+    return res.status(500).json({ message: "Internal server error", error: err.message });
+  }
+}
+
+// Update enrollment status (approve or decline)
+export async function updateEnrollmentStatus(req, res) {
+  try {
+    const { enrol_id } = req.params;
+    const { status } = req.body;
+
+    if (!enrol_id) {
+      return res.status(400).json({ message: "Enrollment ID is required" });
+    }
+
+    if (!status || !["approved", "declined"].includes(status)) {
+      return res.status(400).json({ message: "Valid status (approved or declined) is required" });
+    }
+
+    const { data, error } = await supabase
+      .from("enrol_exam")
+      .update({ status })
+      .eq("enrol_id", enrol_id)
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("Error updating enrollment status:", error);
+      return res.status(500).json({ message: "Failed to update enrollment status", error: error.message });
+    }
+
+    return res.status(200).json({ 
+      message: `Enrollment ${status} successfully`,
+      data 
+    });
+  } catch (err) {
+    console.error("Error updating enrollment status:", err);
+    return res.status(500).json({ message: "Internal server error", error: err.message });
+  }
+}

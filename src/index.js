@@ -2,7 +2,9 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import adminRoute from "./routes/adminRoute.js";
+import studentRoute from "./routes/studentRoute.js";
 import authRoute from "./routes/adminAuthRoute.js";
+import studentAuthRoute from "./routes/studentAuthRoute.js";
 import healthRoute from "./routes/healthRoute.js";
 import {job,dbjob} from "./config/cron.js";
 // import rateLimiter from "./middleware/rateLimiter.js";
@@ -27,7 +29,9 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", healthRoute);
 app.use("/api/auth/admin", authRoute);
+app.use("/api/auth/student", studentAuthRoute);
 app.use("/api/admin", adminRoute);
+app.use("/api/student", studentRoute);
 
 
 app.listen(PORT, ()=>{
