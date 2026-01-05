@@ -31,15 +31,18 @@ export const checkValidationErrors = (req, res, next) => {
 
 // Helper function to sanitize output data (prevent XSS in responses)
 export function sanitizeOutput(data) {
+  // List of field names that contain URLs and should not be sanitized
+  const urlFields = ['image_url', 'url', 'link', 'href', 'src', 'payment_url', 'study_mat_url'];
+  
   if (typeof data === 'string') {
-    // Escape HTML characters
+    // Escape HTML characters (but not forward slashes for URLs)
     return data
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#x27;')
-      .replace(/\//g, '&#x2F;');
+      .replace(/'/g, '&#x27;');
+      // Note: NOT escaping forward slashes to preserve URLs
   }
   
   if (Array.isArray(data)) {
@@ -53,7 +56,12 @@ export function sanitizeOutput(data) {
         // Don't sanitize certain fields that should remain as-is
         if (['password', 'password_hash', 'token'].includes(key)) {
           sanitized[key] = data[key];
-        } else {
+        } 
+        // Don't sanitize URL fields - keep them as-is
+        else if (urlFields.includes(key) || key.endsWith('_url') || key.endsWith('_link')) {
+          sanitized[key] = data[key];
+        }
+        else {
           sanitized[key] = sanitizeOutput(data[key]);
         }
       }
