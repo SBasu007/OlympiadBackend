@@ -916,6 +916,8 @@ export async function getPendingEnrollments(req, res) {
       .from("enrol_exam")
       .select(`
         enrol_id,
+        user_id,
+        exam_id,
         payment_url,
         created_at,
         status,
@@ -938,6 +940,8 @@ export async function getPendingEnrollments(req, res) {
     // Format the response
     const formattedData = data.map(enrollment => ({
       enrol_id: enrollment.enrol_id,
+      user_id: enrollment.user_id,
+      exam_id: enrollment.exam_id,
       name: enrollment.users?.name || "N/A",
       payment_url: enrollment.payment_url,
       contact: enrollment.users?.contact || "N/A",
@@ -957,7 +961,7 @@ export async function getPendingEnrollments(req, res) {
 export async function updateEnrollmentStatus(req, res) {
   try {
     const { enrol_id } = req.params;
-    const { status } = req.body;
+    const { status, user_id, exam_id } = req.body;
 
     if (!enrol_id) {
       return res.status(400).json({ message: "Enrollment ID is required" });
@@ -967,6 +971,7 @@ export async function updateEnrollmentStatus(req, res) {
       return res.status(400).json({ message: "Valid status (approved or declined) is required" });
     }
 
+    // Update enrollment status
     const { data, error } = await supabase
       .from("enrol_exam")
       .update({ status })
@@ -979,6 +984,26 @@ export async function updateEnrollmentStatus(req, res) {
       return res.status(500).json({ message: "Failed to update enrollment status", error: error.message });
     }
 
+    // If approved, insert into exam_status table
+    if (status === "approved") {
+      // Use user_id and exam_id from request body, fallback to data if not provided
+      const finalUserId = user_id || data.user_id;
+      const finalExamId = exam_id || data.exam_id;
+
+      const { data: insertData, error: insertError } = await supabase
+        .from("exam_access")
+        .insert([{
+          user_id: finalUserId,
+          exam_id: finalExamId
+        }])
+        .select("*");
+
+      if (insertError) {
+        console.error("Error inserting into exam_status:", insertError);
+        return res.status(500).json({ message: "Failed to insert exam status", error: insertError.message });
+      }
+    }
+
     return res.status(200).json({ 
       message: `Enrollment ${status} successfully`,
       data 
@@ -986,5 +1011,200 @@ export async function updateEnrollmentStatus(req, res) {
   } catch (err) {
     console.error("Error updating enrollment status:", err);
     return res.status(500).json({ message: "Internal server error", error: err.message });
+  }
+}
+
+export async function getExamAccess(req, res) {
+  try {
+    const { user_id } = req.params;
+    const { exam_id } = req.query;
+
+    if (!user_id) return res.status(400).json({ message: "User ID required" });
+    if (!exam_id) return res.status(400).json({ message: "Exam ID required" });
+
+    // Query exam_access table for the specific user and exam
+    const { data, error } = await supabase
+      .from("exam_access")
+      .select("*")
+      .eq("user_id", user_id)
+      .eq("exam_id", exam_id)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      // PGRST116 is "no rows returned" which is not an error for this use case
+      console.error("Error fetching exam access:", error);
+      return res.status(500).json({ 
+        message: "Failed to fetch exam access", 
+        error: error.message 
+      });
+    }
+
+    // If no record found, user doesn't have access
+    if (!data) {
+      return res.status(200).json({ 
+        hasAccess: false,
+        message: "User does not have access to this exam"
+      });
+    }
+
+    // User has access, return the access record
+    return res.status(200).json({ 
+      hasAccess: true,
+      exam_access_id: data.access_id || data.id,
+      user_id: data.user_id,
+      exam_id: data.exam_id,
+      attempted: data.attempted || 'unsubmitted'
+    });
+
+  } catch (err) {
+    console.error("Error fetching exam access:", err);
+    return res.status(500).json({ 
+      message: "Internal server error", 
+      error: err.message 
+    });
+  }
+}
+
+export async function getRequest(req, res) {
+  try {
+    // Fetch all records from re_attempt table with nested user and exam details
+    const { data: reAttempts, error: reAttemptsError } = await supabase
+      .from("re_attempt")
+      .select(`
+        re_attempt_id,
+        user_id,
+        exam_id,
+        date,
+        reason,
+        status,
+        remark,
+        users:user_id (
+          name,
+          contact
+        ),
+        exam:exam_id (
+          name
+        )
+      `)
+      .order("re_attempt_id", { ascending: false });
+
+    if (reAttemptsError) {
+      console.error("Error fetching re_attempt records:", reAttemptsError);
+      return res.status(500).json({
+        message: "Failed to fetch re-attempt requests",
+        error: reAttemptsError.message
+      });
+    }
+
+    // Early return if no re_attempts
+    if (!reAttempts || reAttempts.length === 0) {
+      return res.status(200).json([]);
+    }
+
+    // Fetch ALL user_attempt records in a single query (much more efficient than N+1)
+    const { data: allUserAttempts, error: userAttemptsError } = await supabase
+      .from("user_attempt")
+      .select("user_id, exam_id, answers");
+
+    if (userAttemptsError) {
+      console.error("Error fetching user_attempt records:", userAttemptsError);
+      return res.status(500).json({
+        message: "Failed to fetch user attempts",
+        error: userAttemptsError.message
+      });
+    }
+
+    // Create a Map for O(1) lookup: "user_id_exam_id" -> answers
+    const attemptMap = new Map();
+    allUserAttempts.forEach(attempt => {
+      const key = `${attempt.user_id}_${attempt.exam_id}`;
+      attemptMap.set(key, attempt.answers);
+    });
+
+    // Format the response with user and exam details
+    const enrichedData = reAttempts.map(attempt => ({
+      re_attempt_id: attempt.re_attempt_id,
+      user_id: attempt.user_id,
+      exam_id: attempt.exam_id,
+      name: attempt.users?.name || "N/A",
+      contact: attempt.users?.contact || "N/A",
+      exam_name: attempt.exam?.name || "N/A",
+      date: attempt.date,
+      reason: attempt.reason,
+      status: attempt.status,
+      remark: attempt.remark,
+      answers: attemptMap.get(`${attempt.user_id}_${attempt.exam_id}`) || null
+    }));
+    
+    return res.status(200).json(enrichedData);
+
+  } catch (err) {
+    console.error("Error fetching requests:", err);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: err.message
+    });
+  }
+}
+
+export async function updateRequestStatus(req, res) {
+  try {
+    const { re_attempt_id } = req.params;
+    const { status, remark } = req.body;
+
+    if (!re_attempt_id) {
+      return res.status(400).json({ message: "Re-attempt ID is required" });
+    }
+
+    // Update re_attempt status and remark
+    const { data, error } = await supabase
+      .from("re_attempt")
+      .update({ 
+        status,
+        remark: remark || null
+      })
+      .eq("re_attempt_id", re_attempt_id)
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("Error updating request status:", error);
+      return res.status(500).json({ 
+        message: "Failed to update request status", 
+        error: error.message 
+      });
+    }
+
+    // If approved, create exam_access for the user
+    if (status === "approved") {
+      const { error: accessError } = await supabase
+        .from("exam_access")
+        .update([{
+          attempted: 'reexam'
+        }])
+        .eq("user_id", data.user_id)
+        .eq("exam_id", data.exam_id);
+
+      if (accessError && accessError.code !== '23505') {
+        // 23505 is duplicate key error, which is acceptable
+        console.error("Error creating exam access:", accessError);
+        return res.status(500).json({ 
+          message: "Request approved but failed to create exam access", 
+          error: accessError.message 
+        });
+      }
+    }
+
+    return res.status(200).json({ 
+      message: `Request ${status} successfully`,
+      data 
+    });
+
+  } catch (err) {
+    console.error("Error updating request status:", err);
+    return res.status(500).json({ 
+      message: "Internal server error", 
+      error: err.message 
+    });
   }
 }

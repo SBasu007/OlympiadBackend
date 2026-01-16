@@ -188,7 +188,7 @@ export async function getExamQuestions(req, res) {
 // Submit exam and calculate score
 export async function submitExam(req, res) {
   try {
-    const { exam_id, user_id, answers, time_taken } = req.body;
+    const { exam_id, user_id, answers, time_taken, submission_status } = req.body;
 
     if (!exam_id) return res.status(400).json({ message: "Exam ID required" });
     if (!user_id) return res.status(400).json({ message: "User ID required" });
@@ -224,15 +224,21 @@ export async function submitExam(req, res) {
     }
 
     const quesMark = examData?.ques_mark ?? 1; // Default to 1 if not found
-
     // Calculate score
     let correctCount = 0;
     let totalQuestions = questions.length;
 
     questions.forEach(question => {
       const userAnswer = answers[question.question_id];
-      if (userAnswer && userAnswer.selectedOption === question.correct) {
+      const isCorrect = userAnswer && userAnswer.selectedOption === question.correct;
+      
+      if (isCorrect) {
         correctCount++;
+      }
+      
+      // Add correct property to each answer object
+      if (userAnswer) {
+        userAnswer.correct = isCorrect;
       }
     });
 
@@ -251,7 +257,7 @@ export async function submitExam(req, res) {
         correct: correctCount,
         incorrect: totalQuestions - correctCount,
         score,
-        time_taken
+        time_taken,
       }])
       .select("*");
 
@@ -261,11 +267,36 @@ export async function submitExam(req, res) {
         message: "Failed to save result", 
         error: resultError.message 
       });
-    }
+    }    
+    
+   
 
+    // Update exam access to mark as submitted/ended
+    const {data: AccessData, error: AccessDataError } = await supabase
+      .from("exam_access")
+      .update({ attempted: submission_status })
+      .eq("exam_id", exam_id)
+      .eq("user_id", user_id);
+
+    if (AccessDataError) {
+      console.error("Error updating exam access:", AccessDataError);
+    }  
+    
+    // Log user attempt with answers
+    const { data: answerLogData, error: answerLogError } = await supabase
+      .from("user_attempt")
+      .insert([{
+        exam_id,
+        user_id,
+        answers}])
+
+    if (answerLogError) {
+      console.error("Error logging user attempt:", answerLogError);
+    }    
+      
     // Return comprehensive result data
     return res.status(200).json({
-      result_id: resultData[0].result_id,
+      result_id: resultData.attempt_id,
       exam_name: examData.name,
       exam_type: "MCQ",
       score,
@@ -318,6 +349,162 @@ export async function getExamResult(req, res) {
     return res.status(500).json({ 
       message: "Internal server error", 
       error: err.message 
+    });
+  }
+}
+
+// Request re-exam
+export async function requestReExam(req, res) {
+  try {
+    const { exam_id, user_id, reason } = req.body;
+
+    // Validation
+    if (!exam_id) return res.status(400).json({ message: "Exam ID required" });
+    if (!user_id) return res.status(400).json({ message: "User ID required" });
+    if (!reason) return res.status(400).json({ message: "Reason required" });
+
+    // Check if enrollment exists for this user and exam
+    const { data: enrollmentData, error: enrollmentError } = await supabase
+      .from("re_attempt")
+      .select("status")
+      .eq("exam_id", exam_id)
+      .eq("user_id", user_id)
+      .single();
+
+    if (enrollmentError && enrollmentError.code !== 'PGRST116') {
+      console.error("Error checking enrollment:", enrollmentError);
+      return res.status(500).json({
+        message: "Failed to check enrollment status",
+        error: enrollmentError.message
+      });
+    }
+
+    if (enrollmentData)
+    {if (enrollmentData.status == "pending" || enrollmentData.status == "approved") {
+      return res.status(400).json({
+        message: "You have already requested a re-exam for this exam."
+      });
+    }}
+    
+
+    // Insert into re_attempt table
+    const { data, error } = await supabase
+      .from("re_attempt")
+      .insert([{
+        exam_id,
+        user_id,
+        reason,
+      }])
+      .select("*");
+
+    if (error) {
+      console.error("Error requesting re-exam:", error);
+      return res.status(500).json({
+        message: "Failed to request re-exam",
+        error: error.message
+      });
+    }
+
+    return res.status(201).json({
+      message: "Re-exam request submitted successfully",
+      data: sanitizeOutput(data[0])
+    });
+
+  } catch (err) {
+    console.error("Error requesting re-exam:", err);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: err.message
+    });
+  }
+}
+
+// Get previous exam result by exam_id and user_id for resume mode
+export async function getPreviousExamResult(req, res) {
+  try {
+    const { exam_id, user_id } = req.params;
+
+    if (!exam_id) return res.status(400).json({ message: "Exam ID required" });
+    if (!user_id) return res.status(400).json({ message: "User ID required" });
+
+    // Fetch the most recent result for this exam and user
+    const { data, error } = await supabase
+      .from("result")
+      .select("*")
+      .eq("exam_id", exam_id)
+      .eq("user_id", user_id)
+      .order("attempted_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error) {
+      console.error("Error fetching previous result:", error);
+      return res.status(500).json({
+        message: "Failed to fetch previous result",
+        error: error.message
+      });
+    }
+
+    if (!data) {
+      return res.status(404).json({ message: "No previous result found" });
+    }
+
+    return res.status(200).json(sanitizeOutput(data));
+
+  } catch (err) {
+    console.error("Error fetching previous result:", err);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: err.message
+    });
+  }
+}
+
+// Get previous exam attempts by exam_id and user_id for resume mode
+export async function getPreviousExamAttempts(req, res) {
+  try {
+    const { exam_id, user_id } = req.params;
+
+    if (!exam_id) return res.status(400).json({ message: "Exam ID required" });
+    if (!user_id) return res.status(400).json({ message: "User ID required" });
+
+    // Fetch the most recent attempt with answers
+    const { data, error } = await supabase
+      .from("user_attempt")
+      .select("*")
+      .eq("exam_id", exam_id)
+      .eq("user_id", user_id)
+      .order("answer_id", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error) {
+      console.error("Error fetching previous attempts:", error);
+      return res.status(500).json({
+        message: "Failed to fetch previous attempts",
+        error: error.message
+      });
+    }
+
+    if (!data || !data.answers) {
+      return res.status(404).json({ message: "No previous attempts found" });
+    }
+
+    // Convert answers object to array format for easier consumption
+    const answersArray = Object.entries(data.answers).map(([questionId, answer]) => ({
+      question_id: parseInt(questionId),
+      question: answer.question,
+      selected_option: answer.selectedOption,
+      saved_at: answer.savedAt
+    }));
+
+    return res.status(200).json(answersArray);
+
+  } catch (err) {
+    console.error("Error fetching previous attempts:", err);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: err.message
     });
   }
 }

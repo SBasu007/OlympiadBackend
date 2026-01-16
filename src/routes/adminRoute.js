@@ -7,7 +7,7 @@ import { createCategory,createSubCategory,createSubject,createExam,
         updateSubCategory, deleteSubCategory,
         updateSubject, deleteSubject,
         updateExam, deleteExam,
-        getPendingEnrollments, updateEnrollmentStatus
+        getPendingEnrollments, updateEnrollmentStatus, getExamAccess, getRequest, updateRequestStatus
 } from "../controllers/adminController.js";
 
 const router = express.Router();
@@ -60,5 +60,13 @@ router.get("/exams-with-questions", getExamsWithQuestions);
 // Enrollment management routes
 router.get("/enrollments/pending", getPendingEnrollments);
 router.put("/enrollments/:enrol_id/status", updateEnrollmentStatus);
+
+// Exam access routes
+router.get("/exam-access/:user_id", getExamAccess);
+
+// Request Re-Exam routes
+router.get("/request", getRequest);
+router.put("/request/:re_attempt_id/approve", updateRequestStatus);
+router.put("/request/:re_attempt_id/decline", updateRequestStatus);
 
 export default router;

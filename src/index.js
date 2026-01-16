@@ -26,6 +26,37 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Comprehensive logging for all requests to /student/exam/submit
+app.use((req, res, next) => {
+  if (req.path.includes('/student/exam/submit') && req.method === 'POST') {
+    console.log('\n[🔍 REQUEST RECEIVED]', {
+      timestamp: new Date().toISOString(),
+      method: req.method,
+      path: req.path,
+      url: req.originalUrl,
+      contentType: req.headers['content-type'],
+      contentLength: req.headers['content-length'],
+      bodyKeys: typeof req.body === 'object' ? Object.keys(req.body) : 'N/A'
+    });
+  }
+  next();
+});
+
+// Handle sendBeacon requests (text/plain content-type) - AFTER json parser
+app.use(express.text({ type: 'text/plain' }));
+app.use((req, res, next) => {
+  if (req.headers['content-type'] === 'text/plain' && typeof req.body === 'string') {
+    try {
+      req.body = JSON.parse(req.body);
+      console.log('[✅ Parsed text/plain as JSON]', { bodyKeys: Object.keys(req.body) });
+    } catch (e) {
+      console.log('[❌ Failed to parse text/plain]', { error: e.message });
+      // If parsing fails, leave body as is
+    }
+  }
+  next();
+});
 // app.use(rateLimiter);
 
 
