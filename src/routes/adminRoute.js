@@ -6,7 +6,8 @@ import { createCategory,createSubCategory,createSubject,createExam,
         uploadQuestions, uploadQuestionsBatch, getQuestions, updateQuestion, deleteQuestionsByExam, getExamsWithQuestions,
         updateSubCategory, deleteSubCategory,
         updateSubject, deleteSubject,
-        updateExam, deleteExam
+        updateExam, deleteExam,
+        getPendingEnrollments, updateEnrollmentStatus, getExamAccess, getRequest, updateRequestStatus
 } from "../controllers/adminController.js";
 
 const router = express.Router();
@@ -55,5 +56,17 @@ router.put("/questions/:id", upload.single("file"), updateQuestion);
 router.delete("/questions/exam/:exam_id", deleteQuestionsByExam);
 // Get exams with questions (optimized)
 router.get("/exams-with-questions", getExamsWithQuestions);
+
+// Enrollment management routes
+router.get("/enrollments/pending", getPendingEnrollments);
+router.put("/enrollments/:enrol_id/status", updateEnrollmentStatus);
+
+// Exam access routes
+router.get("/exam-access/:user_id", getExamAccess);
+
+// Request Re-Exam routes
+router.get("/request", getRequest);
+router.put("/request/:re_attempt_id/approve", updateRequestStatus);
+router.put("/request/:re_attempt_id/decline", updateRequestStatus);
 
 export default router;
