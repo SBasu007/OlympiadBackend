@@ -892,15 +892,35 @@ export async function deleteQuestionsByExam(req, res) {
 // Get distinct exam IDs that have questions (optimized for minimal data transfer)
 export async function getExamsWithQuestions(req, res) {
   try {
-    // Fetch only distinct exam_id values instead of all questions
-    const { data, error } = await supabase
-      .from("questions")
-      .select("exam_id");
+    const pageSize = 1000;
+    let allData = [];
+    let page = 0;
+    let hasMore = true;
 
-    if (error) return res.status(500).json({ message: "Failed to fetch exam IDs", error });
+    // Paginate through all questions to bypass the 1000 row limit
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from("questions")
+        .select("exam_id")
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (error) return res.status(500).json({ message: "Failed to fetch exam IDs", error });
+      
+      if (data.length === 0) {
+        hasMore = false;
+      } else {
+        allData = allData.concat(data);
+        if (data.length < pageSize) {
+          hasMore = false;
+        }
+        page++;
+      }
+    }
     
     // Extract unique exam IDs
-    const uniqueExamIds = [...new Set(data.map(q => q.exam_id))];
+    const uniqueExamIds = [...new Set(allData.map(q => q.exam_id))];
+    
+    console.log(`Total questions fetched: ${allData.length}, Unique exam IDs: ${uniqueExamIds.length}`, uniqueExamIds);
     
     return res.status(200).json(uniqueExamIds);
   } catch (err) {
