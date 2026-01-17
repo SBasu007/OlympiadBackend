@@ -257,6 +257,7 @@ export async function submitExam(req, res) {
         correct: correctCount,
         incorrect: totalQuestions - correctCount,
         score,
+        percentage,
         time_taken,
       }])
       .select("*");

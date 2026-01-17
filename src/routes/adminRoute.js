@@ -7,7 +7,7 @@ import { createCategory,createSubCategory,createSubject,createExam,
         updateSubCategory, deleteSubCategory,
         updateSubject, deleteSubject,
         updateExam, deleteExam,
-        getPendingEnrollments, updateEnrollmentStatus, getExamAccess, getRequest, updateRequestStatus
+        getPendingEnrollments, updateEnrollmentStatus, getExamAccess, getRequest, updateRequestStatus, getFilteredMeritList
 } from "../controllers/adminController.js";
 
 const router = express.Router();
@@ -68,5 +68,8 @@ router.get("/exam-access/:user_id", getExamAccess);
 router.get("/request", getRequest);
 router.put("/request/:re_attempt_id/approve", updateRequestStatus);
 router.put("/request/:re_attempt_id/decline", updateRequestStatus);
+
+// Get filtered merit list
+router.get("/merit-list", getFilteredMeritList);
 
 export default router;

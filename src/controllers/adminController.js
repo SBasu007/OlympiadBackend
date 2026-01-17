@@ -1208,3 +1208,135 @@ export async function updateRequestStatus(req, res) {
     });
   }
 }
+
+// Get filtered merit list with distinct user_id and exam_id, earliest attempt first
+export async function getFilteredMeritList(req, res) {
+  try {
+    const { category_id, subcategory_id, subject_id, exam_id, percentage_min, percentage_max, date_from, date_to } = req.query;
+
+    if (!exam_id) {
+      return res.status(400).json({ message: "Exam ID is required" });
+    }
+
+    // Build the query for results with exam and user details
+    let query = supabase
+      .from("result")
+      .select(`
+        user_id,
+        exam_id,
+        score,
+        percentage,
+        attempted_at,
+        exam (
+          exam_id,
+          name,
+          subject_id,
+          subject (
+            subject_id,
+            name,
+            subcategory_id,
+            subcategory (
+              subcategory_id,
+              name,
+              cat_id,
+              category (
+                category_id,
+                name
+              )
+            )
+          )
+        )
+      `)
+      .eq("exam_id", exam_id);
+
+    // Apply percentage filter if provided
+    if (percentage_min) {
+      query = query.gte("percentage", parseFloat(percentage_min));
+    }
+    if (percentage_max) {
+      query = query.lte("percentage", parseFloat(percentage_max));
+    }
+
+    // Apply date range filter if provided
+    if (date_from) {
+      query = query.gte("attempted_at", date_from);
+    }
+    if (date_to) {
+      query = query.lte("attempted_at", date_to);
+    }
+
+    const { data, error } = await query.order("attempted_at", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching merit list:", error);
+      return res.status(500).json({
+        message: "Failed to fetch merit list",
+        error: error.message
+      });
+    }
+
+    if (!data || data.length === 0) {
+      return res.status(200).json([]);
+    }
+
+    // Filter by category, subcategory, subject if provided
+    let filteredData = data;
+    
+    if (category_id) {
+      filteredData = filteredData.filter(item => 
+        item.exam?.subject?.subcategory?.category?.category_id == category_id
+      );
+    }
+    
+    if (subcategory_id) {
+      filteredData = filteredData.filter(item => 
+        item.exam?.subject?.subcategory?.subcategory_id == subcategory_id
+      );
+    }
+    
+    if (subject_id) {
+      filteredData = filteredData.filter(item => 
+        item.exam?.subject?.subject_id == subject_id
+      );
+    }
+
+    // Get distinct records by user_id and exam_id, keeping earliest attempt
+    const distinctMap = new Map();
+    filteredData.forEach(result => {
+      const key = `${result.user_id}_${result.exam_id}`;
+      
+      // If this combination doesn't exist or current result is earlier, add it
+      if (!distinctMap.has(key) || new Date(result.attempted_at) < new Date(distinctMap.get(key).attempted_at)) {
+        distinctMap.set(key, result);
+      }
+    });
+
+    const distinctResults = Array.from(distinctMap.values());
+
+    // Sort by percentage descending (merit list order)
+    distinctResults.sort((a, b) => parseFloat(b.percentage) - parseFloat(a.percentage));
+
+    // Transform response to include ranking
+    const rankedResults = distinctResults.map((result, index) => ({
+      rank: index + 1,
+      user_id: result.user_id,
+      exam_id: result.exam_id,
+      exam_name: result.exam?.name,
+      subject_name: result.exam?.subject?.name,
+      subcategory_name: result.exam?.subject?.subcategory?.name,
+      category_name: result.exam?.subject?.subcategory?.category?.name,
+      score: result.score,
+      percentage: result.percentage,
+      attempted_at: result.attempted_at
+    }));
+
+    return res.status(200).json(rankedResults);
+
+  } catch (err) {
+    console.error("Error in getFilteredMeritList:", err);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: err.message
+    });
+  }
+}
