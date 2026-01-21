@@ -1,6 +1,8 @@
 import { supabase } from "../config/db.js";
 import { uploadToCloudinary,deleteFromCloudinary } from "../config/uploadCloudinary.js";
 import { sanitizeOutput } from "../utils/sanitize.js";
+import PDFDocument from "pdfkit";
+import axios from "axios";
 
 // Exam Enrollment
 export async function enrollInExam(req, res) {
@@ -248,30 +250,31 @@ export async function submitExam(req, res) {
     const percentage = totalQuestions > 0 ? ((correctCount / totalQuestions) * 100).toFixed(2) : "0.00";
     const passed = parseFloat(percentage) >= 50; // Pass threshold: 50%
 
-    // Store result in database
-    const { data: resultData, error: resultError } = await supabase
-      .from("result")
-      .insert([{
-        exam_id,
-        user_id,
-        correct: correctCount,
-        incorrect: totalQuestions - correctCount,
-        score,
-        percentage,
-        time_taken,
-      }])
-      .select("*");
+    // Only store result if submission_status is 'submitted'
+    if (submission_status == 'submitted') {
+      // Store result in database
+      const { data: resultData, error: resultError } = await supabase
+        .from("result")
+        .insert([{
+          exam_id,
+          user_id,
+          correct: correctCount,
+          incorrect: totalQuestions - correctCount,
+          score,
+          percentage,
+          time_taken,
+        }])
+        .select("*");
 
-    if (resultError) {
-      console.error("Error saving result:", resultError);
-      return res.status(500).json({ 
-        message: "Failed to save result", 
-        error: resultError.message 
-      });
-    }    
-    
+      if (resultError) {
+        console.error("Error saving result:", resultError);
+        return res.status(500).json({ 
+          message: "Failed to save result", 
+          error: resultError.message 
+        });
+      }    
+    } 
    
-
     // Update exam access to mark as submitted/ended
     const {data: AccessData, error: AccessDataError } = await supabase
       .from("exam_access")
@@ -507,5 +510,200 @@ export async function getPreviousExamAttempts(req, res) {
       message: "Internal server error",
       error: err.message
     });
+  }
+}
+
+// Generate certificate PDF
+export async function generateCertificate(req, res) {
+  try {
+    const { user_id, exam_id } = req.params;
+
+    if (!exam_id) return res.status(400).json({ message: "Exam ID required" });
+    if (!user_id) return res.status(400).json({ message: "User ID required" });
+
+    // Fetch exam details including certificate_bg
+    const { data: examData, error: examError } = await supabase
+      .from("exam")
+      .select("exam_id, name, certificate_bg")
+      .eq("exam_id", exam_id)
+      .single();
+
+    if (examError) {
+      console.error("Error fetching exam details:", examError);
+      return res.status(500).json({
+        message: "Failed to fetch exam details",
+        error: examError.message
+      });
+    }
+
+    if (!examData) {
+      return res.status(404).json({ message: "Exam not found" });
+    }
+
+    if (!examData.certificate_bg) {
+      return res.status(400).json({ 
+        message: "Certificate template not available for this exam" 
+      });
+    }
+
+    // Fetch user details
+    const { data: userData, error: userError } = await supabase
+      .from("users")
+      .select("user_id, name")
+      .eq("user_id", user_id)
+      .single();
+
+    if (userError) {
+      console.error("Error fetching user details:", userError);
+      return res.status(500).json({
+        message: "Failed to fetch user details",
+        error: userError.message
+      });
+    }
+
+    if (!userData) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Fetch the latest result for this user and exam
+    const { data: resultData, error: resultError } = await supabase
+      .from("result")
+      .select("*")
+      .eq("exam_id", exam_id)
+      .eq("user_id", user_id)
+      .order("attempted_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (resultError) {
+      console.error("Error fetching result:", resultError);
+      return res.status(500).json({
+        message: "Failed to fetch result",
+        error: resultError.message
+      });
+    }
+
+    if (!resultData) {
+      return res.status(404).json({ 
+        message: "No result found. Please complete the exam first." 
+      });
+    }
+
+    // Check if user passed (percentage >= 50)
+    if (parseFloat(resultData.percentage) < 50) {
+      return res.status(400).json({
+        message: "Certificate not available. Minimum 50% score required."
+      });
+    }
+
+    // Download certificate background image from Cloudinary
+    const imageResponse = await axios.get(examData.certificate_bg, {
+      responseType: 'arraybuffer'
+    });
+
+    const imageBuffer = Buffer.from(imageResponse.data);
+
+    // Sanitize filename
+    const sanitizeName = (str) => str.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30);
+    const fileName = `certificate_${sanitizeName(userData.name)}_${sanitizeName(examData.name)}.pdf`;
+
+    // Set response headers BEFORE creating the document
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
+    // Create PDF document
+    const doc = new PDFDocument({
+      size: 'A4',
+      layout: 'landscape',
+      margin: 0
+    });
+
+    // Handle errors during PDF generation
+    doc.on('error', (err) => {
+      console.error("PDF generation error:", err);
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Error generating certificate" });
+      }
+    });
+
+    // Pipe PDF to response
+    doc.pipe(res);
+
+    // Add background image (full page)
+    doc.image(imageBuffer, 0, 0, {
+      width: 842,  // A4 landscape width in points
+      height: 595  // A4 landscape height in points
+    });
+
+    // Add text overlay - customize positioning based on your certificate design
+    // Student Name
+    doc.fontSize(32)
+      .font('Helvetica-Bold')
+      .fillColor('#000000')
+      .text(userData.name, 0, 250, {
+        width: 842,
+        align: 'center'
+      });
+
+    // Exam Name
+    doc.fontSize(20)
+      .font('Helvetica')
+      .fillColor('#333333')
+      .text(`for successfully completing`, 0, 300, {
+        width: 842,
+        align: 'center'
+      });
+
+    doc.fontSize(24)
+      .font('Helvetica-Bold')
+      .fillColor('#000000')
+      .text(examData.name, 0, 330, {
+        width: 842,
+        align: 'center'
+      });
+
+    // Score Details
+    doc.fontSize(18)
+      .font('Helvetica')
+      .fillColor('#555555')
+      .text(
+        `Score: ${resultData.score} | Percentage: ${resultData.percentage}%`,
+        0,
+        380,
+        {
+          width: 842,
+          align: 'center'
+        }
+      );
+
+    // Date
+    const certificateDate = new Date(resultData.attempted_at).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    doc.fontSize(14)
+      .font('Helvetica')
+      .fillColor('#777777')
+      .text(`Date: ${certificateDate}`, 0, 480, {
+        width: 842,
+        align: 'center'
+      });
+
+    // Finalize PDF
+    doc.end();
+
+  } catch (err) {
+    console.error("Error generating certificate:", err);
+    
+    // If response hasn't been sent yet
+    if (!res.headersSent) {
+      return res.status(500).json({
+        message: "Internal server error",
+        error: err.message
+      });
+    }
   }
 }
