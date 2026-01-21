@@ -1209,10 +1209,10 @@ export async function updateRequestStatus(req, res) {
   }
 }
 
-// Get filtered merit list with distinct user_id and exam_id, earliest attempt first
+// Get filtered merit list with distinct user_id and exam_id, latest attempt only
 export async function getFilteredMeritList(req, res) {
   try {
-    const { category_id, subcategory_id, subject_id, exam_id, percentage_min, percentage_max, date_from, date_to } = req.query;
+    const { exam_id, percentage_min, percentage_max, date_from, date_to } = req.query;
 
     if (!exam_id) {
       return res.status(400).json({ message: "Exam ID is required" });
@@ -1227,24 +1227,16 @@ export async function getFilteredMeritList(req, res) {
         score,
         percentage,
         attempted_at,
-        exam (
-          exam_id,
+        users:user_id (
           name,
-          subject_id,
-          subject (
-            subject_id,
-            name,
-            subcategory_id,
-            subcategory (
-              subcategory_id,
-              name,
-              cat_id,
-              category (
-                category_id,
-                name
-              )
-            )
-          )
+          institute,
+          email,
+          contact
+        ),
+        exam:exam_id (
+          name,
+          num_of_ques,
+          ques_mark
         )
       `)
       .eq("exam_id", exam_id);
@@ -1265,7 +1257,7 @@ export async function getFilteredMeritList(req, res) {
       query = query.lte("attempted_at", date_to);
     }
 
-    const { data, error } = await query.order("attempted_at", { ascending: true });
+    const { data, error } = await query.order("attempted_at", { ascending: false });
 
     if (error) {
       console.error("Error fetching merit list:", error);
@@ -1279,34 +1271,12 @@ export async function getFilteredMeritList(req, res) {
       return res.status(200).json([]);
     }
 
-    // Filter by category, subcategory, subject if provided
-    let filteredData = data;
-    
-    if (category_id) {
-      filteredData = filteredData.filter(item => 
-        item.exam?.subject?.subcategory?.category?.category_id == category_id
-      );
-    }
-    
-    if (subcategory_id) {
-      filteredData = filteredData.filter(item => 
-        item.exam?.subject?.subcategory?.subcategory_id == subcategory_id
-      );
-    }
-    
-    if (subject_id) {
-      filteredData = filteredData.filter(item => 
-        item.exam?.subject?.subject_id == subject_id
-      );
-    }
-
-    // Get distinct records by user_id and exam_id, keeping earliest attempt
+    // Get distinct records by user_id and exam_id, keeping latest attempt (already ordered descending)
     const distinctMap = new Map();
-    filteredData.forEach(result => {
+    data.forEach(result => {
       const key = `${result.user_id}_${result.exam_id}`;
-      
-      // If this combination doesn't exist or current result is earlier, add it
-      if (!distinctMap.has(key) || new Date(result.attempted_at) < new Date(distinctMap.get(key).attempted_at)) {
+      // Keep only the first (latest) attempt since data is ordered descending by attempted_at
+      if (!distinctMap.has(key)) {
         distinctMap.set(key, result);
       }
     });
@@ -1316,21 +1286,19 @@ export async function getFilteredMeritList(req, res) {
     // Sort by percentage descending (merit list order)
     distinctResults.sort((a, b) => parseFloat(b.percentage) - parseFloat(a.percentage));
 
-    // Transform response to include ranking
-    const rankedResults = distinctResults.map((result, index) => ({
-      rank: index + 1,
-      user_id: result.user_id,
-      exam_id: result.exam_id,
-      exam_name: result.exam?.name,
-      subject_name: result.exam?.subject?.name,
-      subcategory_name: result.exam?.subject?.subcategory?.name,
-      category_name: result.exam?.subject?.subcategory?.category?.name,
+    // Transform response to include only requested fields
+    const formattedResults = distinctResults.map((result) => ({
+      user_name: result.users?.name || "N/A",
+      school_name: result.users?.institute || "N/A",
+      total_marks: (result.exam?.num_of_ques || 0) * (result.exam?.ques_mark || 0),
       score: result.score,
+      email: result.users?.email || "N/A",
+      contact: result.users?.contact || "N/A",
       percentage: result.percentage,
       attempted_at: result.attempted_at
     }));
 
-    return res.status(200).json(rankedResults);
+    return res.status(200).json(formattedResults);
 
   } catch (err) {
     console.error("Error in getFilteredMeritList:", err);
