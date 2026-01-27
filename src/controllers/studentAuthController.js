@@ -5,7 +5,7 @@ import { sanitizeOutput } from "../utils/sanitize.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_change_me";
 const JWT_EXPIRES_IN = "1d"; // 1 day session
-const COOKIE_MAX_AGE = 24 * 60 * 60 * 1000; // 1 day in milliseconds
+// const COOKIE_MAX_AGE = 24 * 60 * 60 * 1000; // 1 day in milliseconds
 
 // Helper to generate JWT
 function signToken(payload) {
@@ -18,7 +18,7 @@ function setAuthCookie(res, token) {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production', // HTTPS only in production
     sameSite: 'strict',
-    maxAge: COOKIE_MAX_AGE,
+    // maxAge: COOKIE_MAX_AGE,
     path: '/',
   });
 }
