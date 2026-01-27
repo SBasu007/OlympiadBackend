@@ -300,7 +300,6 @@ export async function submitExam(req, res) {
       
     // Return comprehensive result data
     return res.status(200).json({
-      result_id: resultData.attempt_id,
       exam_name: examData.name,
       exam_type: "MCQ",
       score,
@@ -521,51 +520,32 @@ export async function generateCertificate(req, res) {
     if (!exam_id) return res.status(400).json({ message: "Exam ID required" });
     if (!user_id) return res.status(400).json({ message: "User ID required" });
 
-    // Fetch exam details including certificate_bg
+    /* ================= EXAM ================= */
     const { data: examData, error: examError } = await supabase
       .from("exam")
       .select("exam_id, name, certificate_bg")
       .eq("exam_id", exam_id)
       .single();
 
-    if (examError) {
-      console.error("Error fetching exam details:", examError);
-      return res.status(500).json({
-        message: "Failed to fetch exam details",
-        error: examError.message
-      });
-    }
-
-    if (!examData) {
+    if (examError || !examData)
       return res.status(404).json({ message: "Exam not found" });
-    }
 
-    if (!examData.certificate_bg) {
-      return res.status(400).json({ 
-        message: "Certificate template not available for this exam" 
-      });
-    }
+    if (!examData.certificate_bg)
+      return res
+        .status(400)
+        .json({ message: "Certificate template not available" });
 
-    // Fetch user details
+    /* ================= USER ================= */
     const { data: userData, error: userError } = await supabase
       .from("users")
       .select("user_id, name")
       .eq("user_id", user_id)
       .single();
 
-    if (userError) {
-      console.error("Error fetching user details:", userError);
-      return res.status(500).json({
-        message: "Failed to fetch user details",
-        error: userError.message
-      });
-    }
-
-    if (!userData) {
+    if (userError || !userData)
       return res.status(404).json({ message: "User not found" });
-    }
 
-    // Fetch the latest result for this user and exam
+    /* ================= RESULT ================= */
     const { data: resultData, error: resultError } = await supabase
       .from("result")
       .select("*")
@@ -575,132 +555,126 @@ export async function generateCertificate(req, res) {
       .limit(1)
       .single();
 
-    if (resultError) {
-      console.error("Error fetching result:", resultError);
-      return res.status(500).json({
-        message: "Failed to fetch result",
-        error: resultError.message
-      });
-    }
+    if (resultError || !resultData)
+      return res
+        .status(404)
+        .json({ message: "No exam result found" });
 
-    if (!resultData) {
-      return res.status(404).json({ 
-        message: "No result found. Please complete the exam first." 
-      });
-    }
-
-    // Check if user passed (percentage >= 50)
-    if (parseFloat(resultData.percentage) < 50) {
+    if (Number(resultData.percentage) < 50)
       return res.status(400).json({
-        message: "Certificate not available. Minimum 50% score required."
+        message: "Certificate available only for 50% and above"
       });
-    }
 
-    // Download certificate background image from Cloudinary
+    /* ================= DOWNLOAD TEMPLATE ================= */
     const imageResponse = await axios.get(examData.certificate_bg, {
-      responseType: 'arraybuffer'
+      responseType: "arraybuffer"
     });
-
     const imageBuffer = Buffer.from(imageResponse.data);
 
-    // Sanitize filename
-    const sanitizeName = (str) => str.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30);
-    const fileName = `certificate_${sanitizeName(userData.name)}_${sanitizeName(examData.name)}.pdf`;
+    /* ================= HEADERS ================= */
+    const safe = (s) => s.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 30);
+    const fileName = `certificate_${safe(userData.name)}_${safe(
+      examData.name
+    )}.pdf`;
 
-    // Set response headers BEFORE creating the document
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${fileName}"`
+    );
+    res.setHeader("Cache-Control", "no-store");
 
-    // Create PDF document
+    /* ================= PDF ================= */
     const doc = new PDFDocument({
-      size: 'A4',
-      layout: 'landscape',
+      size: "A4",
+      layout: "landscape",
       margin: 0
     });
 
-    // Handle errors during PDF generation
-    doc.on('error', (err) => {
-      console.error("PDF generation error:", err);
-      if (!res.headersSent) {
-        res.status(500).json({ message: "Error generating certificate" });
-      }
-    });
-
-    // Pipe PDF to response
     doc.pipe(res);
 
-    // Add background image (full page)
+    /* ================= BACKGROUND ================= */
     doc.image(imageBuffer, 0, 0, {
-      width: 842,  // A4 landscape width in points
-      height: 595  // A4 landscape height in points
+      width: 842,
+      height: 595
     });
 
-    // Add text overlay - customize positioning based on your certificate design
-    // Student Name
-    doc.fontSize(32)
-      .font('Helvetica-Bold')
-      .fillColor('#000000')
-      .text(userData.name, 0, 250, {
-        width: 842,
-        align: 'center'
+    /* ================= TEXT AREA ================= */
+    const LEFT_X = 80;
+    const CONTENT_WIDTH = 560;
+
+    /* Student Name */
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(34)
+      .fillColor("#1a1a1a")
+      .text(userData.name, LEFT_X, 260, {
+        width: CONTENT_WIDTH,
+        align: "center"
       });
 
-    // Exam Name
-    doc.fontSize(20)
-      .font('Helvetica')
-      .fillColor('#333333')
-      .text(`for successfully completing`, 0, 300, {
-        width: 842,
-        align: 'center'
-      });
-
-    doc.fontSize(24)
-      .font('Helvetica-Bold')
-      .fillColor('#000000')
-      .text(examData.name, 0, 330, {
-        width: 842,
-        align: 'center'
-      });
-
-    // Score Details
-    doc.fontSize(18)
-      .font('Helvetica')
-      .fillColor('#555555')
+    /* Subtitle */
+    doc
+      .font("Helvetica")
+      .fontSize(18)
+      .fillColor("#333333")
       .text(
-        `Score: ${resultData.score} | Percentage: ${resultData.percentage}%`,
-        0,
-        380,
+        "has successfully participated and achieved qualifying performance in the",
+        LEFT_X,
+        315,
         {
-          width: 842,
-          align: 'center'
+          width: CONTENT_WIDTH,
+          align: "center"
         }
       );
 
-    // Date
-    const certificateDate = new Date(resultData.attempted_at).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-
-    doc.fontSize(14)
-      .font('Helvetica')
-      .fillColor('#777777')
-      .text(`Date: ${certificateDate}`, 0, 480, {
-        width: 842,
-        align: 'center'
+    /* Exam Name */
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(20)
+      .fillColor("#000000")
+      .text(examData.name, LEFT_X, 365, {
+        width: CONTENT_WIDTH,
+        align: "center"
       });
 
-    // Finalize PDF
-    doc.end();
+    /* Score */
+    doc
+      .font("Helvetica")
+      .fontSize(16)
+      .fillColor("#555555")
+      .text(
+        `Score: ${resultData.score}   |   Percentage: ${resultData.percentage}%`,
+        LEFT_X,
+        410,
+        {
+          width: CONTENT_WIDTH,
+          align: "center"
+        }
+      );
 
+    /* Date (Bottom Left) */
+    const certificateDate = new Date(
+      resultData.attempted_at
+    ).toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "long",
+      year: "numeric"
+    });
+
+    doc
+      .fontSize(14)
+      .fillColor("#444444")
+      .text(`${certificateDate}`, 90, 511);
+
+    /* Signature Text (Bottom Right safe zone) */
+   
+
+    doc.end();
   } catch (err) {
-    console.error("Error generating certificate:", err);
-    
-    // If response hasn't been sent yet
+    console.error("Certificate Error:", err);
     if (!res.headersSent) {
-      return res.status(500).json({
+      res.status(500).json({
         message: "Internal server error",
         error: err.message
       });
