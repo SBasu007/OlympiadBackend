@@ -14,12 +14,15 @@ function signToken(payload) {
 
 // Helper to set HTTP-only cookie
 function setAuthCookie(res, token) {
+  const isProduction = process.env.NODE_ENV === 'production';
+  
   res.cookie('student_token', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-    sameSite: 'strict',
-    // maxAge: COOKIE_MAX_AGE,
+    secure: isProduction, // HTTPS only in production
+    sameSite: isProduction ? 'none' : 'lax', // 'none' for cross-origin in prod, 'lax' for dev
+    maxAge: 24 * 60 * 60 * 1000, // 1 day
     path: '/',
+    ...(isProduction && { domain: process.env.COOKIE_DOMAIN }), // Set domain in production
   });
 }
 
@@ -174,12 +177,15 @@ export async function getStudentProfile(req, res) {
 // POST /api/auth/student/logout
 export async function logoutStudent(req, res) {
   try {
-    // Clear the HTTP-only cookie
+    const isProduction = process.env.NODE_ENV === 'production';
+    
+    // Clear the HTTP-only cookie with same options as when setting
     res.clearCookie('student_token', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
       path: '/',
+      ...(isProduction && { domain: process.env.COOKIE_DOMAIN }),
     });
 
     return res.status(200).json({ message: "Logged out successfully" });
