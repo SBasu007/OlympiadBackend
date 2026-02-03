@@ -366,39 +366,39 @@ export async function requestReExam(req, res) {
     if (!user_id) return res.status(400).json({ message: "User ID required" });
     if (!reason) return res.status(400).json({ message: "Reason required" });
 
-    // Check if enrollment exists for this user and exam
-    const { data: enrollmentData, error: enrollmentError } = await supabase
+    // 🔍 Check latest re-attempt request
+    const { data: lastRequest, error: fetchError } = await supabase
       .from("re_attempt")
       .select("status")
       .eq("exam_id", exam_id)
       .eq("user_id", user_id)
-      .single();
+      .order("re_attempt_id", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (enrollmentError && enrollmentError.code !== 'PGRST116') {
-      console.error("Error checking enrollment:", enrollmentError);
+    if (fetchError) {
+      console.error("Error checking re-attempt:", fetchError);
       return res.status(500).json({
-        message: "Failed to check enrollment status",
-        error: enrollmentError.message
+        message: "Failed to check previous requests",
+        error: fetchError.message
       });
     }
 
-    if (enrollmentData)
-    {if (enrollmentData.status == "pending" || enrollmentData.status == "approved") {
+    // 🚫 Block if last request is still pending
+    if (lastRequest && lastRequest.status === "pending") {
       return res.status(400).json({
-        message: "You have already requested a re-exam for this exam."
+        message: "You still have a pending re-exam request. Please wait for approval."
       });
-    }}
-    
+    }
 
-    // Insert into re_attempt table
+    // ✅ Insert new request
     const { data, error } = await supabase
       .from("re_attempt")
-      .insert([{
-        exam_id,
-        user_id,
-        reason,
-      }])
-      .select("*");
+      .insert([
+        { exam_id, user_id, reason }
+      ])
+      .select()
+      .single();
 
     if (error) {
       console.error("Error requesting re-exam:", error);
@@ -410,11 +410,11 @@ export async function requestReExam(req, res) {
 
     return res.status(201).json({
       message: "Re-exam request submitted successfully",
-      data: sanitizeOutput(data[0])
+      data: sanitizeOutput(data)
     });
 
   } catch (err) {
-    console.error("Error requesting re-exam:", err);
+    console.error("Unexpected error:", err);
     return res.status(500).json({
       message: "Internal server error",
       error: err.message
@@ -437,8 +437,7 @@ export async function getPreviousExamResult(req, res) {
       .eq("exam_id", exam_id)
       .eq("user_id", user_id)
       .order("attempted_at", { ascending: false })
-      .limit(1)
-      .single();
+      .limit(1);
 
     if (error) {
       console.error("Error fetching previous result:", error);
@@ -559,11 +558,6 @@ export async function generateCertificate(req, res) {
       return res
         .status(404)
         .json({ message: "No exam result found" });
-
-    if (Number(resultData.percentage) < 50)
-      return res.status(400).json({
-        message: "Certificate available only for 50% and above"
-      });
 
     /* ================= DOWNLOAD TEMPLATE ================= */
     const imageResponse = await axios.get(examData.certificate_bg, {

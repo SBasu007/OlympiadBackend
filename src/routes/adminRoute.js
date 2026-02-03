@@ -7,11 +7,15 @@ import { createCategory,createSubCategory,createSubject,createExam,
         updateSubCategory, deleteSubCategory,
         updateSubject, deleteSubject,
         updateExam, deleteExam,
-        getPendingEnrollments, updateEnrollmentStatus, getExamAccess, getRequest, updateRequestStatus, getFilteredMeritList
+        getPendingEnrollments, updateEnrollmentStatus, getExamAccess, getRequest, updateRequestStatus, getFilteredMeritList,
+        getDashboardData
 } from "../controllers/adminController.js";
 
 const router = express.Router();
 const upload = multer({ dest: "uploads/" }); // saves temp files locally
+
+// 🚀 AGGREGATED ENDPOINT - Single call replaces 5 API calls
+router.get("/dashboard-data", getDashboardData);
 
 // Category Routes
 router.post("/category", upload.single("file"), createCategory);

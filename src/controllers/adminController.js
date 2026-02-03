@@ -1328,3 +1328,74 @@ export async function getFilteredMeritList(req, res) {
     });
   }
 }
+
+// 🚀 AGGREGATED ENDPOINT - Reduces 5 API calls to 1
+export async function getDashboardData(req, res) {
+  try {
+    // Execute all queries in parallel using Promise.all for better performance
+    const [categoriesRes, subcategoriesRes, subjectsRes, examsRes, questionsRes] = await Promise.all([
+      supabase.from("category").select("*").order("category_id", { ascending: true }),
+      supabase.from("sub_category").select("*").order("subcategory_id", { ascending: true }),
+      supabase.from("subject").select("*").order("subject_id", { ascending: true }),
+      supabase.from("exam").select("*").order("exam_id", { ascending: true }),
+      getExamIdsWithQuestions() // Get unique exam IDs that have questions
+    ]);
+
+    // Check for errors in any query
+    if (categoriesRes.error) throw new Error(`Categories: ${categoriesRes.error.message}`);
+    if (subcategoriesRes.error) throw new Error(`Subcategories: ${subcategoriesRes.error.message}`);
+    if (subjectsRes.error) throw new Error(`Subjects: ${subjectsRes.error.message}`);
+    if (examsRes.error) throw new Error(`Exams: ${examsRes.error.message}`);
+
+    return res.status(200).json({
+      categories: categoriesRes.data || [],
+      subcategories: subcategoriesRes.data || [],
+      subjects: subjectsRes.data || [],
+      exams: examsRes.data || [],
+      examsWithQuestions: questionsRes || []
+    });
+  } catch (err) {
+    console.error("Error fetching dashboard data:", err);
+    return res.status(500).json({
+      message: "Failed to fetch dashboard data",
+      error: err.message
+    });
+  }
+}
+
+// Helper function to get exam IDs that have questions
+async function getExamIdsWithQuestions() {
+  try {
+    const pageSize = 1000;
+    let allData = [];
+    let page = 0;
+    let hasMore = true;
+
+    // Paginate through all questions to bypass the 1000 row limit
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from("questions")
+        .select("exam_id")
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (error) throw error;
+      
+      if (data.length === 0) {
+        hasMore = false;
+      } else {
+        allData = allData.concat(data);
+        if (data.length < pageSize) {
+          hasMore = false;
+        }
+        page++;
+      }
+    }
+    
+    // Extract unique exam IDs
+    const uniqueExamIds = [...new Set(allData.map(q => q.exam_id))];
+    return uniqueExamIds;
+  } catch (err) {
+    console.error("Error fetching exam IDs with questions:", err);
+    return [];
+  }
+}
