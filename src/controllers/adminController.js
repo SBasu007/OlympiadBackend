@@ -813,8 +813,12 @@ export async function updateQuestion(req, res) {
     const { id } = req.params;
     if (!id) return res.status(400).json({ message: "Question id required" });
 
-  const { question_text, options, correct_option } = req.body;
+    const { question_text, options, correct_option } = req.body;
     const file = req.file; // optional new image
+
+    // Debug logging
+    console.log('Updating question:', id);
+    console.log('Request body:', { question_text, options, correct_option });
 
     let image_url = undefined;
     if (file) {
@@ -823,38 +827,36 @@ export async function updateQuestion(req, res) {
     }
 
     let payload = {};
-    if (question_text !== undefined) payload = { ...payload, question: question_text };
+    
+    if (question_text !== undefined) {
+      payload.question = question_text;
+    }
+    
     if (options !== undefined) {
       let parsed = options;
       if (typeof parsed === 'string') {
-        try { parsed = JSON.parse(parsed); } catch {}
-      }
-      payload = { ...payload, options: parsed };
-    }
-    if (correct_option !== undefined) {
-      let correctValue = correct_option;
-      // If we have options in this request, prefer them for index mapping; else we need to fetch existing options
-      let optionsArray = undefined;
-      if (payload.options && Array.isArray(payload.options)) {
-        optionsArray = payload.options;
-      } else if (typeof options === 'string') {
-        try { const maybe = JSON.parse(options); if (Array.isArray(maybe)) optionsArray = maybe; } catch{}
-      }
-      if (optionsArray) {
-        if (typeof correct_option === 'string') {
-          const idx = Number.parseInt(correct_option, 10);
-          if (!Number.isNaN(idx) && idx >= 0 && idx < optionsArray.length) {
-            correctValue = optionsArray[idx];
-          }
-        } else if (typeof correct_option === 'number') {
-          if (correct_option >= 0 && correct_option < optionsArray.length) {
-            correctValue = optionsArray[correct_option];
-          }
+        try { 
+          parsed = JSON.parse(parsed); 
+        } catch (e) {
+          console.error('Failed to parse options:', e);
         }
       }
-      payload = { ...payload, correct: correctValue };
+      payload.options = parsed;
+      console.log('Parsed options:', parsed);
     }
-    if (image_url !== undefined) payload = { ...payload, image_url };
+    
+    if (correct_option !== undefined) {
+      // Store the correct option value exactly as received (string or number)
+      // Frontend sends the actual option string ('3.00', '5/8', etc.), not an index
+      payload.correct = correct_option;
+      console.log('Setting correct option to:', correct_option);
+    }
+    
+    if (image_url !== undefined) {
+      payload.image_url = image_url;
+    }
+
+    console.log('Final payload:', payload);
 
     const { data, error } = await supabase
       .from("questions")
@@ -863,7 +865,12 @@ export async function updateQuestion(req, res) {
       .select("*")
       .single();
 
-    if (error) return res.status(500).json({ message: "Failed to update question", error });
+    if (error) {
+      console.error('Supabase update error:', error);
+      return res.status(500).json({ message: "Failed to update question", error });
+    }
+    
+    console.log('Updated question data:', data);
     return res.status(200).json(data);
   } catch (err) {
     console.error("Error updating question:", err);
