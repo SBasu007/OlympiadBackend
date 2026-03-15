@@ -512,6 +512,170 @@ export async function getPreviousExamAttempts(req, res) {
 }
 
 // Generate certificate PDF
+// export async function generateCertificate(req, res) {
+//   try {
+//     const { user_id, exam_id } = req.params;
+
+//     if (!exam_id) return res.status(400).json({ message: "Exam ID required" });
+//     if (!user_id) return res.status(400).json({ message: "User ID required" });
+
+//     /* ================= EXAM ================= */
+//     const { data: examData, error: examError } = await supabase
+//       .from("exam")
+//       .select("exam_id, name, certificate_bg")
+//       .eq("exam_id", exam_id)
+//       .single();
+
+//     if (examError || !examData)
+//       return res.status(404).json({ message: "Exam not found" });
+
+//     if (!examData.certificate_bg)
+//       return res
+//         .status(400)
+//         .json({ message: "Certificate template not available" });
+
+//     /* ================= USER ================= */
+//     const { data: userData, error: userError } = await supabase
+//       .from("users")
+//       .select("user_id, name")
+//       .eq("user_id", user_id)
+//       .single();
+
+//     if (userError || !userData)
+//       return res.status(404).json({ message: "User not found" });
+
+//     /* ================= RESULT ================= */
+//     const { data: resultData, error: resultError } = await supabase
+//       .from("result")
+//       .select("*")
+//       .eq("exam_id", exam_id)
+//       .eq("user_id", user_id)
+//       .order("attempted_at", { ascending: false })
+//       .limit(1)
+//       .single();
+
+//     if (resultError || !resultData)
+//       return res
+//         .status(404)
+//         .json({ message: "No exam result found" });
+
+//     /* ================= DOWNLOAD TEMPLATE ================= */
+//     const imageResponse = await axios.get(examData.certificate_bg, {
+//       responseType: "arraybuffer"
+//     });
+//     const imageBuffer = Buffer.from(imageResponse.data);
+
+//     /* ================= HEADERS ================= */
+//     const safe = (s) => s.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 30);
+//     const fileName = `certificate_${safe(userData.name)}_${safe(
+//       examData.name
+//     )}.pdf`;
+
+//     res.setHeader("Content-Type", "application/pdf");
+//     res.setHeader(
+//       "Content-Disposition",
+//       `inline; filename="${fileName}"`
+//     );
+//     res.setHeader("Cache-Control", "no-store");
+
+//     /* ================= PDF ================= */
+//     const doc = new PDFDocument({
+//       size: "A4",
+//       layout: "landscape",
+//       margin: 0
+//     });
+
+//     doc.pipe(res);
+
+//     /* ================= BACKGROUND ================= */
+//     doc.image(imageBuffer, 0, 0, {
+//       width: 842,
+//       height: 595
+//     });
+
+//     /* ================= TEXT AREA ================= */
+//     const LEFT_X = 80;
+//     const CONTENT_WIDTH = 560;
+
+//     /* Student Name */
+//     doc
+//       .font("Helvetica-Bold")
+//       .fontSize(34)
+//       .fillColor("#1a1a1a")
+//       .text(userData.name, LEFT_X, 260, {
+//         width: CONTENT_WIDTH,
+//         align: "center"
+//       });
+
+//     /* Subtitle */
+//     doc
+//       .font("Helvetica")
+//       .fontSize(18)
+//       .fillColor("#333333")
+//       .text(
+//         "has successfully participated and achieved qualifying performance in the",
+//         LEFT_X,
+//         315,
+//         {
+//           width: CONTENT_WIDTH,
+//           align: "center"
+//         }
+//       );
+
+//     /* Exam Name */
+//     doc
+//       .font("Helvetica-Bold")
+//       .fontSize(20)
+//       .fillColor("#000000")
+//       .text(examData.name, LEFT_X, 365, {
+//         width: CONTENT_WIDTH,
+//         align: "center"
+//       });
+
+//     /* Score */
+//     doc
+//       .font("Helvetica")
+//       .fontSize(16)
+//       .fillColor("#555555")
+//       .text(
+//         `Score: ${resultData.score}   |   Percentage: ${resultData.percentage}%`,
+//         LEFT_X,
+//         410,
+//         {
+//           width: CONTENT_WIDTH,
+//           align: "center"
+//         }
+//       );
+
+//     /* Date (Bottom Left) */
+//     const certificateDate = new Date(
+//       resultData.attempted_at
+//     ).toLocaleDateString("en-IN", {
+//       day: "numeric",
+//       month: "long",
+//       year: "numeric"
+//     });
+
+//     doc
+//       .fontSize(14)
+//       .fillColor("#444444")
+//       .text(`${certificateDate}`, 90, 511);
+
+//     /* Signature Text (Bottom Right safe zone) */
+   
+
+//     doc.end();
+//   } catch (err) {
+//     console.error("Certificate Error:", err);
+//     if (!res.headersSent) {
+//       res.status(500).json({
+//         message: "Internal server error",
+//         error: err.message
+//       });
+//     }
+//   }
+// }
+
 export async function generateCertificate(req, res) {
   try {
     const { user_id, exam_id } = req.params;
@@ -537,7 +701,7 @@ export async function generateCertificate(req, res) {
     /* ================= USER ================= */
     const { data: userData, error: userError } = await supabase
       .from("users")
-      .select("user_id, name")
+      .select("user_id, name, institute")
       .eq("user_id", user_id)
       .single();
 
@@ -555,34 +719,31 @@ export async function generateCertificate(req, res) {
       .single();
 
     if (resultError || !resultData)
-      return res
-        .status(404)
-        .json({ message: "No exam result found" });
+      return res.status(404).json({ message: "No exam result found" });
 
     /* ================= DOWNLOAD TEMPLATE ================= */
     const imageResponse = await axios.get(examData.certificate_bg, {
-      responseType: "arraybuffer"
+      responseType: "arraybuffer",
     });
+
     const imageBuffer = Buffer.from(imageResponse.data);
 
     /* ================= HEADERS ================= */
     const safe = (s) => s.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 30);
+
     const fileName = `certificate_${safe(userData.name)}_${safe(
       examData.name
     )}.pdf`;
 
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `inline; filename="${fileName}"`
-    );
+    res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
     res.setHeader("Cache-Control", "no-store");
 
     /* ================= PDF ================= */
     const doc = new PDFDocument({
       size: "A4",
       layout: "landscape",
-      margin: 0
+      margin: 0,
     });
 
     doc.pipe(res);
@@ -590,87 +751,107 @@ export async function generateCertificate(req, res) {
     /* ================= BACKGROUND ================= */
     doc.image(imageBuffer, 0, 0, {
       width: 842,
-      height: 595
+      height: 595,
     });
 
-    /* ================= TEXT AREA ================= */
-    const LEFT_X = 80;
-    const CONTENT_WIDTH = 560;
+/* ================= TEXT AREA ================= */
+const LEFT_X = 80;
+const CONTENT_WIDTH = 560;
 
-    /* Student Name */
-    doc
-      .font("Helvetica-Bold")
-      .fontSize(34)
-      .fillColor("#1a1a1a")
-      .text(userData.name, LEFT_X, 260, {
-        width: CONTENT_WIDTH,
-        align: "center"
-      });
+/* ================= STUDENT NAME ================= */
+doc
+  .font("Times-Bold")
+  .fontSize(38)
+  .fillColor("#1a1a1a")
+  .text(userData.name, LEFT_X, 230, {
+    width: CONTENT_WIDTH,
+    align: "center",
+  });
 
-    /* Subtitle */
+/* ================= APPEARING FROM ================= */
+doc
+  .font("Times-Italic")
+  .fontSize(18)
+  .fillColor("#444444")
+  .text("Appearing from", LEFT_X, 270, {
+    width: CONTENT_WIDTH,
+    align: "center",
+  });
+
+/* ================= INSTITUTE ================= */
+doc
+  .font("Times-BoldItalic")
+  .fontSize(22)
+  .fillColor("#222222")
+  .text(userData.institute || "", LEFT_X, 300, {
+    width: CONTENT_WIDTH,
+    align: "center",
+  });
+
+/* ================= SUBTITLE ================= */
+doc
+  .font("Times-Italic")
+  .fontSize(18)
+  .fillColor("#444444")
+  .text(
+    "has successfully participated and achieved qualifying performance in the",
+    LEFT_X,
+    340,
+    {
+      width: CONTENT_WIDTH,
+      align: "center",
+    }
+  );
+
+/* ================= EXAM NAME ================= */
+doc
+  .font("Times-Bold")
+  .fontSize(24)
+  .fillColor("#000000")
+  .text(examData.name.slice(0,-1), LEFT_X, 380, {
+    width: CONTENT_WIDTH,
+    align: "center",
+  });
+
+/* ================= SCORE ================= */
+doc
+  .font("Times-Roman")
+  .fontSize(18)
+  .fillColor("#333333")
+  .text(
+    `Score: ${resultData.score}   |   Percentage: ${resultData.percentage}%`,
+    LEFT_X,
+    420,
+    {
+      width: CONTENT_WIDTH,
+      align: "center",
+    }
+  );
+    /* ================= DATE ================= */
+    const certificateDate = new Date(resultData.attempted_at).toLocaleDateString(
+      "en-IN",
+      {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }
+    );
+
     doc
       .font("Helvetica")
-      .fontSize(18)
-      .fillColor("#333333")
-      .text(
-        "has successfully participated and achieved qualifying performance in the",
-        LEFT_X,
-        315,
-        {
-          width: CONTENT_WIDTH,
-          align: "center"
-        }
-      );
-
-    /* Exam Name */
-    doc
-      .font("Helvetica-Bold")
-      .fontSize(20)
-      .fillColor("#000000")
-      .text(examData.name, LEFT_X, 365, {
-        width: CONTENT_WIDTH,
-        align: "center"
-      });
-
-    /* Score */
-    doc
-      .font("Helvetica")
-      .fontSize(16)
-      .fillColor("#555555")
-      .text(
-        `Score: ${resultData.score}   |   Percentage: ${resultData.percentage}%`,
-        LEFT_X,
-        410,
-        {
-          width: CONTENT_WIDTH,
-          align: "center"
-        }
-      );
-
-    /* Date (Bottom Left) */
-    const certificateDate = new Date(
-      resultData.attempted_at
-    ).toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "long",
-      year: "numeric"
-    });
-
-    doc
       .fontSize(14)
       .fillColor("#444444")
       .text(`${certificateDate}`, 90, 511);
 
-    /* Signature Text (Bottom Right safe zone) */
-   
-
+    /* ================= END ================= */
     doc.end();
   } catch (err) {
     console.error("Certificate Error:", err);
+
     if (!res.headersSent) {
       res.status(500).json({
         message: "Internal server error",
-        error: err.message
+        error: err.message,
       });
     }
   }
