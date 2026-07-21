@@ -1236,6 +1236,61 @@ export async function updateRequestStatus(req, res) {
   }
 }
 
+export async function getUserAttempts(req, res) {
+  try {
+    const { user_id } = req.params;
+    const { exam_id } = req.query;
+
+    if (!user_id) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    let query = supabase
+      .from("user_attempt")
+      .select(`
+        answer_id,
+        user_id,
+        exam_id,
+        answers,
+        exam:exam_id (
+          name
+        )
+      `)
+      .eq("user_id", user_id)
+      .order("answer_id", { ascending: false });
+
+    if (exam_id) {
+      query = query.eq("exam_id", exam_id);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Error fetching user attempts:", error);
+      return res.status(500).json({
+        message: "Failed to fetch user attempts",
+        error: error.message,
+      });
+    }
+
+    const formattedData = (data || []).map((attempt) => ({
+      answer_id: attempt.answer_id,
+      user_id: attempt.user_id,
+      exam_id: attempt.exam_id,
+      exam_name: attempt.exam?.name || "N/A",
+      answers: attempt.answers,
+    }));
+
+    return res.status(200).json(formattedData);
+  } catch (err) {
+    console.error("Error fetching user attempts:", err);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: err.message,
+    });
+  }
+}
+
 // Get filtered merit list with distinct user_id and exam_id, latest attempt only
 export async function getFilteredMeritList(req, res) {
   try {
@@ -1315,6 +1370,8 @@ export async function getFilteredMeritList(req, res) {
 
     // Transform response to include only requested fields
     const formattedResults = distinctResults.map((result) => ({
+      user_id: result.user_id,
+      exam_id: result.exam_id,
       user_name: result.users?.name || "N/A",
       school_name: result.users?.institute || "N/A",
       total_marks: (result.exam?.num_of_ques || 0) * (result.exam?.ques_mark || 0),

@@ -7,7 +7,7 @@ import { createCategory,createSubCategory,createSubject,createExam,
         updateSubCategory, deleteSubCategory,
         updateSubject, deleteSubject,
         updateExam, deleteExam,
-        getPendingEnrollments, updateEnrollmentStatus, getExamAccess, getRequest, updateRequestStatus, getFilteredMeritList,
+        getPendingEnrollments, updateEnrollmentStatus, getExamAccess, getRequest, getUserAttempts, updateRequestStatus, getFilteredMeritList,
         getDashboardData
 } from "../controllers/adminController.js";
 
@@ -70,6 +70,7 @@ router.get("/exam-access/:user_id", getExamAccess);
 
 // Request Re-Exam routes
 router.get("/request", getRequest);
+router.get("/user-attempts/:user_id", getUserAttempts);
 router.put("/request/:re_attempt_id/approve", updateRequestStatus);
 router.put("/request/:re_attempt_id/decline", updateRequestStatus);
 
