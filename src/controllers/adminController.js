@@ -1448,6 +1448,7 @@ export async function getInstituteMeritList(req, res) {
       .map((result) => ({
         user_id: result.user_id,
         exam_id: result.exam_id,
+        exam_name: result.exam?.name || "N/A",
         user_name: result.users?.name || "N/A",
         school_name: result.users?.institute || "N/A",
         total_marks: (result.exam?.num_of_ques || 0) * (result.exam?.ques_mark || 0),
