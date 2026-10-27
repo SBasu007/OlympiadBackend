@@ -1393,6 +1393,81 @@ export async function getFilteredMeritList(req, res) {
   }
 }
 
+// Get the merit list for all exams taken by students from an institute
+export async function getInstituteMeritList(req, res) {
+  try {
+    const { institute } = req.query;
+    const instituteSearch = typeof institute === "string" ? institute.trim() : "";
+
+    if (!instituteSearch) {
+      return res.status(400).json({ message: "Institute is required" });
+    }
+
+    const { data, error } = await supabase
+      .from("result")
+      .select(`
+        user_id,
+        exam_id,
+        score,
+        percentage,
+        attempted_at,
+        users:user_id!inner (
+          name,
+          institute,
+          email,
+          contact
+        ),
+        exam:exam_id (
+          name,
+          num_of_ques,
+          ques_mark
+        )
+      `)
+      .ilike("users.institute", `%${instituteSearch}%`)
+      .order("attempted_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching institute merit list:", error);
+      return res.status(500).json({
+        message: "Failed to fetch institute merit list",
+        error: error.message
+      });
+    }
+
+    // Keep only the latest attempt for each student and exam.
+    const distinctMap = new Map();
+    (data || []).forEach((result) => {
+      const key = `${result.user_id}_${result.exam_id}`;
+      if (!distinctMap.has(key)) {
+        distinctMap.set(key, result);
+      }
+    });
+
+    const formattedResults = Array.from(distinctMap.values())
+      .sort((a, b) => parseFloat(b.percentage) - parseFloat(a.percentage))
+      .map((result) => ({
+        user_id: result.user_id,
+        exam_id: result.exam_id,
+        user_name: result.users?.name || "N/A",
+        school_name: result.users?.institute || "N/A",
+        total_marks: (result.exam?.num_of_ques || 0) * (result.exam?.ques_mark || 0),
+        score: result.score,
+        email: result.users?.email || "N/A",
+        contact: result.users?.contact || "N/A",
+        percentage: result.percentage,
+        attempted_at: result.attempted_at
+      }));
+
+    return res.status(200).json(formattedResults);
+  } catch (err) {
+    console.error("Error in getInstituteMeritList:", err);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: err.message
+    });
+  }
+}
+
 // 🚀 AGGREGATED ENDPOINT - Reduces 5 API calls to 1
 export async function getDashboardData(req, res) {
   try {

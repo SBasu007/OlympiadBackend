@@ -7,7 +7,7 @@ import { createCategory,createSubCategory,createSubject,createExam,
         updateSubCategory, deleteSubCategory,
         updateSubject, deleteSubject,
         updateExam, deleteExam,
-        getPendingEnrollments, updateEnrollmentStatus, getExamAccess, getRequest, getUserAttempts, updateRequestStatus, getFilteredMeritList,
+        getPendingEnrollments, updateEnrollmentStatus, getExamAccess, getRequest, getUserAttempts, updateRequestStatus, getFilteredMeritList, getInstituteMeritList,
         getDashboardData
 } from "../controllers/adminController.js";
 
@@ -75,6 +75,7 @@ router.put("/request/:re_attempt_id/approve", updateRequestStatus);
 router.put("/request/:re_attempt_id/decline", updateRequestStatus);
 
 // Get filtered merit list
+router.get("/merit-list/institute", getInstituteMeritList);
 router.get("/merit-list", getFilteredMeritList);
 
 export default router;
