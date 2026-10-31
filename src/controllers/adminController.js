@@ -1393,17 +1393,31 @@ export async function getFilteredMeritList(req, res) {
   }
 }
 
-// Get the merit list for all exams taken by students from an institute
+
 export async function getInstituteMeritList(req, res) {
   try {
-    const { institute } = req.query;
-    const instituteSearch = typeof institute === "string" ? institute.trim() : "";
+    const { institute, category_id } = req.query;
+
+    const instituteSearch =
+      typeof institute === "string" ? institute.trim() : "";
 
     if (!instituteSearch) {
-      return res.status(400).json({ message: "Institute is required" });
+      return res.status(400).json({
+        message: "Institute is required"
+      });
     }
 
-    const { data, error } = await supabase
+    if (
+      category_id !== undefined &&
+      (!Number.isInteger(Number(category_id)) ||
+        Number(category_id) <= 0)
+    ) {
+      return res.status(400).json({
+        message: "Invalid category ID"
+      });
+    }
+
+    let query = supabase
       .from("result")
       .select(`
         user_id,
@@ -1411,47 +1425,89 @@ export async function getInstituteMeritList(req, res) {
         score,
         percentage,
         attempted_at,
+
         users:user_id!inner (
           name,
           institute,
           email,
           contact
         ),
-        exam:exam_id (
+
+        exam:exam_id!inner (
           name,
           num_of_ques,
-          ques_mark
+          ques_mark,
+
+          subject:subject_id!inner (
+            name,
+
+            sub_category:subcategory_id!inner (
+              name,
+              category_id,
+
+              category:category_id (
+                name
+              )
+            )
+          )
         )
       `)
       .ilike("users.institute", `%${instituteSearch}%`)
       .order("attempted_at", { ascending: false });
 
+    // Filter National Level / State Level
+    if (category_id !== undefined) {
+      query = query.eq(
+        "exam.subject.sub_category.category_id",
+        Number(category_id)
+      );
+    }
+
+    const { data, error } = await query;
+
     if (error) {
-      console.error("Error fetching institute merit list:", error);
+      console.error("Error fetching merit list:", error);
+
       return res.status(500).json({
         message: "Failed to fetch institute merit list",
         error: error.message
       });
     }
 
-    // Keep only the latest attempt for each student and exam.
+    // Keep latest attempt per student per exam
     const distinctMap = new Map();
+
     (data || []).forEach((result) => {
       const key = `${result.user_id}_${result.exam_id}`;
+
       if (!distinctMap.has(key)) {
         distinctMap.set(key, result);
       }
     });
 
     const formattedResults = Array.from(distinctMap.values())
-      .sort((a, b) => parseFloat(b.percentage) - parseFloat(a.percentage))
+      .sort(
+        (a, b) =>
+          Number(b.percentage) - Number(a.percentage)
+      )
       .map((result) => ({
         user_id: result.user_id,
         exam_id: result.exam_id,
         exam_name: result.exam?.name || "N/A",
+
+        category_id:
+          result.exam?.subject?.sub_category?.category_id,
+
+        category_name:
+          result.exam?.subject?.sub_category?.category?.name || "N/A",
+
         user_name: result.users?.name || "N/A",
         school_name: result.users?.institute || "N/A",
-        total_marks: (result.exam?.num_of_ques || 0) * (result.exam?.ques_mark || 0),
+
+        total_marks:
+          (result.exam?.num_of_ques || 0) *
+          (result.exam?.ques_mark || 0),
+
         score: result.score,
         email: result.users?.email || "N/A",
         contact: result.users?.contact || "N/A",
@@ -1460,8 +1516,10 @@ export async function getInstituteMeritList(req, res) {
       }));
 
     return res.status(200).json(formattedResults);
+
   } catch (err) {
     console.error("Error in getInstituteMeritList:", err);
+
     return res.status(500).json({
       message: "Internal server error",
       error: err.message
