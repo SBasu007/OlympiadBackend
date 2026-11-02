@@ -247,7 +247,7 @@ export async function submitExam(req, res) {
     // Calculate score using ques_mark
     const score = correctCount * quesMark;
     const totalMarks = totalQuestions * quesMark;
-    const percentage = totalQuestions > 0 ? ((correctCount / totalQuestions) * 100).toFixed(2) : "0.00";
+    const percentage = totalMarks > 0 ? ((score / totalMarks) * 100).toFixed(2) : "0.00";
     const passed = parseFloat(percentage) >= 50; // Pass threshold: 50%
 
     // Only store result if submission_status is 'submitted'
