@@ -3,7 +3,7 @@ import { body, validationResult } from 'express-validator';
 // Sanitization middleware for student registration
 export const sanitizeRegisterInput = [
   body('email').trim().normalizeEmail().isEmail().withMessage('Invalid email format'),
-  body('password').trim().isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+  body('password').trim().isLength({ min: 4 }).withMessage('Password must be at least 4 characters'),
   body('name').trim().escape().isLength({ min: 1, max: 100 }).withMessage('Name is required'),
   body('guardian').optional().trim().escape().isLength({ max: 100 }),
   body('institute').optional().trim().escape().isLength({ max: 200 }),
