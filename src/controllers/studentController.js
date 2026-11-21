@@ -856,3 +856,314 @@ doc
     }
   }
 }
+
+
+export async function generateScorecard(req, res) {
+  try {
+    const { user_id, exam_id } = req.params;
+
+    if (!exam_id) {
+      return res.status(400).json({ message: "Exam ID required" });
+    }
+
+    if (!user_id) {
+      return res.status(400).json({ message: "User ID required" });
+    }
+
+    /* ================= EXAM ================= */
+
+    const { data: examData, error: examError } = await supabase
+      .from("exam")
+      .select("exam_id, name, certificate_bg")
+      .eq("exam_id", exam_id)
+      .single();
+
+    if (examError || !examData) {
+      return res.status(404).json({ message: "Exam not found" });
+    }
+
+    if (!examData.certificate_bg) {
+      return res.status(400).json({
+        message: "Certificate template not available",
+      });
+    }
+
+    /* ================= USER ================= */
+
+    const { data: userData, error: userError } = await supabase
+      .from("users")
+      .select("user_id, name, institute")
+      .eq("user_id", user_id)
+      .single();
+
+    if (userError || !userData) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    /* ================= RESULT ================= */
+
+    const { data: resultData, error: resultError } = await supabase
+      .from("result")
+      .select("*")
+      .eq("exam_id", exam_id)
+      .eq("user_id", user_id)
+      .order("attempted_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (resultError || !resultData) {
+      return res.status(404).json({
+        message: "No exam result found",
+      });
+    }
+
+    /* ================= DOWNLOAD TEMPLATE ================= */
+
+    const imageResponse = await axios.get(examData.certificate_bg, {
+      responseType: "arraybuffer",
+      timeout: 20000,
+    });
+
+    const imageBuffer = Buffer.from(imageResponse.data);
+
+    /* ================= FILE NAME ================= */
+
+    const safe = (value) =>
+      String(value || "student")
+        .replace(/[^a-zA-Z0-9]/g, "_")
+        .substring(0, 30);
+
+    const fileName = `scorecard_${safe(userData.name)}_${safe(
+      examData.name
+    )}.pdf`;
+
+    /* ================= PDF HEADERS ================= */
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${fileName}"`
+    );
+    res.setHeader("Cache-Control", "no-store");
+
+    /* ================= PDF DOCUMENT ================= */
+
+    const doc = new PDFDocument({
+      size: "A4",
+      layout: "landscape",
+      margin: 0,
+    });
+
+    doc.pipe(res);
+
+    /* ================= BACKGROUND ================= */
+
+    doc.image(imageBuffer, 0, 0, {
+      width: 842,
+      height: 595,
+    });
+
+    /* ================= RESULT VALUES ================= */
+
+    const score = Number(resultData.score) || 0;
+    const total = Number(resultData.total) || 0;
+    const percentage = Number(resultData.percentage) || 0;
+    const correct = Number(resultData.correct) || 0;
+    const incorrect = Number(resultData.incorrect) || 0;
+    const totalQuestions = Number(resultData.total_questions) || 0;
+
+    const certificateDate = new Date(
+      resultData.attempted_at
+    ).toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    });
+
+    /* ================= CONTENT AREA ================= */
+
+    // Keep all content within the original certificate's
+    // central-left blank area.
+
+    const LEFT_X = 80;
+    const CONTENT_WIDTH = 520;
+
+    /* ================= TABLE CELL HELPER ================= */
+
+    const drawCell = (x, y, width, height, value, options = {}) => {
+      doc
+        .rect(x, y, width, height)
+        .lineWidth(0.7)
+        .strokeColor("#44218b")
+        .stroke();
+
+      doc
+        .font(options.bold ? "Helvetica-Bold" : "Helvetica")
+        .fontSize(options.fontSize || 9)
+        .fillColor(options.color || "#172554")
+        .text(String(value ?? ""), x + 5, y + 6, {
+          width: width - 10,
+          height: height - 8,
+          align: options.align || "left",
+          ellipsis: true,
+        });
+    };
+
+    /* ================= CANDIDATE DETAILS ================= */
+
+    const detailsY = 235;
+    const rowH = 25;
+
+    const detailRows = [
+      [
+        ["Candidate Name", userData.name],
+        ["Exam Level", resultData.exam_type || "National Level"],
+      ],
+      [
+        ["Exam Name", examData.name],
+        ["Exam Date", certificateDate],
+      ],
+      [
+        ["Institute", userData.institute || "N/A"],
+        ["Total Questions", totalQuestions],
+      ],
+    ];
+
+    detailRows.forEach((row, index) => {
+      const y = detailsY + index * rowH;
+
+      // Left section
+      drawCell(LEFT_X, y, 105, rowH, row[0][0], {
+        bold: true,
+        fontSize: 8,
+      });
+
+      drawCell(LEFT_X + 105, y, 155, rowH, row[0][1], {
+        bold: true,
+        fontSize: 8,
+      });
+
+      // Right section
+      drawCell(LEFT_X + 260, y, 105, rowH, row[1][0], {
+        bold: true,
+        fontSize: 8,
+      });
+
+      drawCell(LEFT_X + 365, y, 155, rowH, row[1][1], {
+        bold: true,
+        fontSize: 8,
+      });
+    });
+
+    /* ================= RESULT TABLE ================= */
+
+    const tableY = 330;
+    const headerH = 26;
+    const dataH = 30;
+
+    const columns = [
+      { title: "Particulars", width: 170 },
+      { title: "Maximum Marks", width: 110 },
+      { title: "Marks Obtained", width: 120 },
+      { title: "Percentage", width: 120 },
+    ];
+
+    // Table header
+    let x = LEFT_X;
+
+    columns.forEach((column) => {
+      drawCell(
+        x,
+        tableY,
+        column.width,
+        headerH,
+        column.title,
+        {
+          bold: true,
+          fontSize: 8,
+          align: "center",
+        }
+      );
+
+      x += column.width;
+    });
+
+    // Overall result row
+    const resultRow = [
+      "Overall Exam",
+      total,
+      score,
+      `${percentage}%`,
+    ];
+
+    x = LEFT_X;
+
+    resultRow.forEach((value, index) => {
+      drawCell(
+        x,
+        tableY + headerH,
+        columns[index].width,
+        dataH,
+        value,
+        {
+          bold: true,
+          fontSize: 10,
+          align: index === 0 ? "left" : "center",
+        }
+      );
+
+      x += columns[index].width;
+    });
+
+    /* ================= PERFORMANCE SUMMARY ================= */
+
+    const summaryY = 397;
+    const summaryH = 32;
+    const summaryW = CONTENT_WIDTH / 3;
+
+    const summaryItems = [
+      `Correct Answers: ${correct}`,
+      `Wrong Answers: ${incorrect}`,
+      `Accuracy: ${percentage}%`,
+    ];
+
+    summaryItems.forEach((item, index) => {
+      drawCell(
+        LEFT_X + index * summaryW,
+        summaryY,
+        summaryW,
+        summaryH,
+        item,
+        {
+          bold: true,
+          fontSize: 9,
+          align: "center",
+        }
+      );
+    });
+
+    /* ================= DATE ================= */
+
+    doc
+      .font("Helvetica")
+      .fontSize(14)
+      .fillColor("#444444")
+      .text(certificateDate, 90, 511);
+
+    /* ================= END PDF ================= */
+
+    doc.end();
+
+  } catch (err) {
+    console.error("Scorecard Error:", err);
+
+    if (!res.headersSent) {
+      res.status(500).json({
+        message: "Internal server error",
+        error: err.message,
+      });
+    } else {
+      res.destroy(err);
+    }
+  }
+}

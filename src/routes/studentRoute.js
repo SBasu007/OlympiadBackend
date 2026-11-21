@@ -2,7 +2,7 @@ import express from "express";
 import multer from "multer";
 import { authRequired } from "../middleware/adminAuth.js";
 import { enrollInExam, checkEnrollment, getEnrolledExams, getExamQuestions, submitExam, getExamResult, requestReExam, getPreviousExamResult, getPreviousExamAttempts, generateCertificate
-} from "../controllers/studentController.js";
+, generateScorecard} from "../controllers/studentController.js";
 
 const router = express.Router();
 const upload = multer({ dest: "uploads/" }); // saves temp files locally
@@ -46,5 +46,8 @@ router.get("/exam/:exam_id/attempts/:user_id", getPreviousExamAttempts);
 
 //Generate certificate PDF
 router.get("/certificate/:user_id/:exam_id", generateCertificate);
+
+//Generate scorecard PDF
+router.get("/scorecard/:user_id/:exam_id", generateScorecard);
 
 export default router;
