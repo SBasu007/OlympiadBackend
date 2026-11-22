@@ -874,7 +874,7 @@ export async function generateScorecard(req, res) {
 
     const { data: examData, error: examError } = await supabase
       .from("exam")
-      .select("exam_id, name, certificate_bg")
+      .select("exam_id, name, ques_mark, certificate_bg")
       .eq("exam_id", exam_id)
       .single();
 
@@ -966,11 +966,12 @@ export async function generateScorecard(req, res) {
     /* ================= RESULT VALUES ================= */
 
     const score = Number(resultData.score) || 0;
-    const total = Number(resultData.total) || 0;
     const percentage = Number(resultData.percentage) || 0;
     const correct = Number(resultData.correct) || 0;
     const incorrect = Number(resultData.incorrect) || 0;
-    const totalQuestions = Number(resultData.total_questions) || 0;
+    const quesMark = Number(examData.ques_mark) || 0;
+    // Maximum marks based on attempted questions
+    const total = (correct + incorrect) * quesMark;
 
     const certificateDate = new Date(
       resultData.attempted_at
