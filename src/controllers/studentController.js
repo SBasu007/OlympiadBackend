@@ -1009,52 +1009,42 @@ export async function generateScorecard(req, res) {
         });
     };
 
-    /* ================= CANDIDATE DETAILS ================= */
+   /* ================= CANDIDATE DETAILS ================= */
 
-    const detailsY = 235;
-    const rowH = 25;
+const detailsY = 235;
+const rowH = 25;
 
-    const detailRows = [
-      [
-        ["Candidate Name", userData.name],
-        ["Exam Level", resultData.exam_type || "National Level"],
-      ],
-      [
-        ["Exam Name", examData.name],
-        ["Exam Date", certificateDate],
-      ],
-      [
-        ["Institute", userData.institute || "N/A"],
-        ["Total Questions", totalQuestions],
-      ],
-    ];
+const detailRows = [
+  ["Candidate Name", userData.name],
+  ["Exam Name", examData.name],
+  ["Institute", userData.institute || "N/A"],
+];
 
-    detailRows.forEach((row, index) => {
-      const y = detailsY + index * rowH;
+const LABEL_WIDTH = 130;
+const VALUE_WIDTH = CONTENT_WIDTH - LABEL_WIDTH;
 
-      // Left section
-      drawCell(LEFT_X, y, 105, rowH, row[0][0], {
-        bold: true,
-        fontSize: 8,
-      });
+detailRows.forEach((row, index) => {
+  const y = detailsY + index * rowH;
 
-      drawCell(LEFT_X + 105, y, 155, rowH, row[0][1], {
-        bold: true,
-        fontSize: 8,
-      });
+  // Label column
+  drawCell(LEFT_X, y, LABEL_WIDTH, rowH, row[0], {
+    bold: true,
+    fontSize: 9,
+  });
 
-      // Right section
-      drawCell(LEFT_X + 260, y, 105, rowH, row[1][0], {
-        bold: true,
-        fontSize: 8,
-      });
-
-      drawCell(LEFT_X + 365, y, 155, rowH, row[1][1], {
-        bold: true,
-        fontSize: 8,
-      });
-    });
-
+  // Value column - takes remaining width
+  drawCell(
+    LEFT_X + LABEL_WIDTH,
+    y,
+    VALUE_WIDTH,
+    rowH,
+    row[1],
+    {
+      bold: true,
+      fontSize: 9,
+    }
+  );
+});
     /* ================= RESULT TABLE ================= */
 
     const tableY = 330;
